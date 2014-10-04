@@ -4,8 +4,16 @@
 #include <stdio.h>
 #include <endian.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 
 using namespace std;
+
+long long unsigned int get_file_size(const char* file_name) {
+    struct stat st;
+    stat(file_name, &st);
+    
+    return st.st_size;
+}
 
 void hexlify(const char* in, unsigned int size, char* out);
 void print_md4_summ(char* weak_checksumm, int md4_truncation_length);
@@ -58,12 +66,20 @@ bool read_signature_file() {
 
     cout<<"Truncation for md4 is: "<<md4_truncation_from_file<<endl;
   
-    char* md4_checksumm_buffer = (char*)malloc(sizeof(uint32_t) * md4_truncation_from_file);
+    char* md4_checksumm_buffer = (char*)malloc(md4_truncation_from_file);
 
     if (!md4_checksumm_buffer) {
 	std::cout<<"Can't allocate buffer"<<endl;
 	return false;
     }
+
+    unsigned long long file_size = get_file_size(file_path.c_str());
+
+    // Размер одной записи примерно
+    // Вычетаем размер хидера и делим на размер одной сигнатуры 
+    unsigned long long signatures_count = int ( (file_size - sizeof(uint32_t) * 3) / (sizeof(uint32_t) + md4_truncation_from_file));
+
+    std::cout<<"We calculated approximate signatures number as: "<<signatures_count<<endl;
 
     long long unsigned int offset = 0;
     while (true) {
@@ -95,10 +111,6 @@ bool read_signature_file() {
 }
 
 void print_md4_summ(char* md4_checksumm, int md4_truncation_length) {
-    //for (int i = 0; i < md4_truncation_length; i++) {
-    //	printf("pass:%d\n", i);
-    //	printf("%02x ", (char)*(md4_checksumm + i));
-    //}
     char output[32];
 
     hexlify(md4_checksumm, md4_truncation_length, output);
