@@ -7,24 +7,17 @@
 
 using namespace std;
 
+void hexlify(const char* in, unsigned int size, char* out);
+void print_md4_summ(char* weak_checksumm, int md4_truncation_length);
+int read_int(int file_handle, int32_t* int_ptr);
+bool read_signature_file();
 
-int read_int(int file_handle, int32_t* int_ptr) {
-    int32_t integer_value = 0;
+int main() {
+    read_signature_file();
 
-    int read_result = read(file_handle, (char*)&integer_value, sizeof(integer_value));
-  
-    if (read_result <= 0) {
-	return 0;
-    }
-
-    // convert big endian to little endian 
-    integer_value = be32toh(integer_value);
-
-    // return value via ptr
-    *int_ptr = integer_value; 
-
-    return 1;
+    return 0;
 }
+
 
 bool read_signature_file() {
     string file_path = "/root/broken_rdiff/extracted_backup_34bdf94b-43eb-4491-bc65-196d8f624d48.signature";
@@ -87,7 +80,10 @@ bool read_signature_file() {
 	    break;
 	}
 
-	printf("weak: %x offset: %lld\n", weak_checksumm, offset);
+	printf("weak: %08x offset: %lld ", weak_checksumm, offset);
+	printf("md4: ");
+	print_md4_summ(md4_checksumm_buffer, md4_truncation_from_file);
+	printf("\n");
 	// append_list(weak_checksumm, md4_checksumm_buffer, offset)
 	offset += blocksize_from_file; 
     }
@@ -98,8 +94,52 @@ bool read_signature_file() {
     return true;
 }
 
-int main() {
-    read_signature_file(); 
+void print_md4_summ(char* md4_checksumm, int md4_truncation_length) {
+    //for (int i = 0; i < md4_truncation_length; i++) {
+    //	printf("pass:%d\n", i);
+    //	printf("%02x ", (char)*(md4_checksumm + i));
+    //}
+    char output[32];
 
-    return 0;
+    hexlify(md4_checksumm, md4_truncation_length, output);
+    printf("%s", output);
+}
+
+int read_int(int file_handle, int32_t* int_ptr) {
+    int32_t integer_value = 0;
+
+    int read_result = read(file_handle, (char*)&integer_value, sizeof(integer_value));
+  
+    if (read_result <= 0) {
+        return 0;
+    }   
+
+    // convert big endian to little endian 
+    integer_value = be32toh(integer_value);
+
+    // return value via ptr
+    *int_ptr = integer_value; 
+
+    return 1;
+}
+
+
+
+// http://tau-itw.wikidot.com/saphe-implementation-common-hexlify-cpp
+// Convert to upper-case hex string
+void hexlify(const char* in, unsigned int size, char* out)
+{
+    for (unsigned int i = 0 ; i < size ; ++i) {
+        for (int j = 0 ; j < 2 ; ++j) {
+            char nib = (char)(( in[i] >> (4-(4*j)) ) & 0xF);
+	    
+            if (nib < 10) {
+                out[(i*2)+j] = nib + '0';
+            } else {
+		// если добавить A, то получтся в верхнем регистре
+                out[(i*2)+j] = nib - 10 + 'a';
+            }
+        }        
+    }
+    out[size*2] = 0;
 }
