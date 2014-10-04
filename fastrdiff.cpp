@@ -11,6 +11,15 @@
 
 using namespace std;
 
+/*
+ Команды из дельты можно найти вот здесь: https://github.com/librsync/librsync/blob/master/command.c
+*/
+
+/*
+ Генерация тест блока данных: 
+  rdiff signature --block-size 1048576 /root/broken_rdiff/root.hdd root.hdd.signature
+*/
+
 long long unsigned int get_file_size(const char* file_name) {
     struct stat st;
     stat(file_name, &st);
@@ -34,12 +43,14 @@ vector<signature_element> signatures_vector;
 int main() {
     read_signature_file();
 
+    // А следом попробуем отхэшировать файлик наш
+
     return 0;
 }
 
 
 bool read_signature_file() {
-    string file_path = "/root/broken_rdiff/extracted_backup_34bdf94b-43eb-4491-bc65-196d8f624d48.signature";
+    string file_path = "/root/fastrdiff/root.hdd.signature";
     int file_handle = open(file_path.c_str(), O_RDONLY);
 
     if (!file_handle) {
