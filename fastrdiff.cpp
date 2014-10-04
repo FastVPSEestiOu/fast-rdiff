@@ -6,6 +6,21 @@
 
 using namespace std;
 
+
+int read_int(int file_handle, int32_t* int_ptr) {
+    int32_t integer_value = 0;
+
+    read(file_handle, (char*)&integer_value, sizeof(integer_value));
+  
+    // convert big endian to little endian 
+    integer_value = be32toh(integer_value);
+
+    // return value via ptr
+    *int_ptr = integer_value; 
+
+    return 1;
+}
+
 bool read_signature_file() {
     string file_path = "/root/broken_rdiff/extracted_backup_34bdf94b-43eb-4491-bc65-196d8f624d48.signature";
     int file_handle = open(file_path.c_str(), O_RDONLY);
@@ -20,18 +35,14 @@ bool read_signature_file() {
     int32_t blocksize_from_file = 0;
     int32_t md4_truncation_from_file = 0;
 
-    pread(file_handle, (char*)&file_signature_from_file, sizeof(file_signature_from_file), 0);
-
-    // convert from big endian to little endian
-    file_signature_from_file = be32toh(file_signature_from_file);
+    read_int(file_handle, &file_signature_from_file);
 
     if (file_signature_from_file != RS_SIG_MAGIC) {
 	std::cout<<"Can't find signature magic number"<<endl;
 	return false;
     }
 
-    pread(file_handle, (char*)&blocksize_from_file, sizeof(blocksize_from_file), 4);
-    blocksize_from_file = be32toh(blocksize_from_file);
+    read_int(file_handle, &blocksize_from_file);
 
     if (blocksize_from_file > 0 && blocksize_from_file % 2 == 0) {
 	cout<<"We read block size:"<<blocksize_from_file<<endl;	
@@ -40,16 +51,21 @@ bool read_signature_file() {
 	return false;
     }
 
-    pread(file_handle, (char*)&md4_truncation_from_file, sizeof(md4_truncation_from_file), 8);
-    md4_truncation_from_file = be32toh(md4_truncation_from_file);
+    read_int(file_handle, &md4_truncation_from_file);
 
     if (md4_truncation_from_file < 1 or md4_truncation_from_file > 16) {
 	cout<<"Trunkation is: "<<md4_truncation_from_file<<endl;
 	return false;
     }
 
-    cout<<"Trucation for md4 is: "<<md4_truncation_from_file<<endl;
-    
+    cout<<"Truncation for md4 is: "<<md4_truncation_from_file<<endl;
+   
+    while (true) {
+	uint32_t weak_checksumm = 0;
+	break;	
+	//read(file_handle, (char*)&weak_checksumm, sizeof(weak_checksumm));	
+    }
+ 
     // rollsum, md4 signature, offset
     return true;
 }
