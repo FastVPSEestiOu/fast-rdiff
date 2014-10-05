@@ -20,34 +20,68 @@ using namespace std;
   rdiff signature --block-size 1048576 /root/broken_rdiff/root.hdd root.hdd.signature
 */
 
-long long unsigned int get_file_size(const char* file_name) {
-    struct stat st;
-    stat(file_name, &st);
-    
-    return st.st_size;
-}
+typedef struct signature_element {
+    char md4_checksumm[8];
+    int32_t weak_checksumm;
+    unsigned long long offset;
+} signature_element;
 
+void process_file();
+unsigned int rs_calc_weak_sum(void const *p, int len);
+long long unsigned int get_file_size(const char* file_name);
 void hexlify(const char* in, unsigned int size, char* out);
 void print_md4_summ(char* weak_checksumm, int md4_truncation_length);
 int read_int(int file_handle, int32_t* int_ptr);
 bool read_signature_file();
-
-typedef struct signature_element { 
-    char md4_checksumm[8];
-    int32_t weak_checksumm;
-    unsigned long long offset; 
-} signature_element;
 
 vector<signature_element> signatures_vector;
 
 int main() {
     read_signature_file();
 
-    // А следом попробуем отхэшировать файлик наш
+    process_file();
 
     return 0;
 }
 
+
+void process_file() {
+    string file_path = "/root/fastrdiff/root.hdd";
+    int file_handle = open(file_path.c_str(), O_RDONLY);
+
+    if (!file_handle) {
+        std::cout<<"Can't open signature file"<<endl;
+        return;   
+    }
+
+    unsigned int block_size = 1048576; 
+
+    void* buffer = malloc(block_size);
+    unsigned long long int index = 0;
+    while (true) {
+	int readed_bytes = read(file_handle, buffer, block_size);
+
+	if (readed_bytes <= 0) {
+	    break;
+	}
+
+	unsigned int weak_checksumm = rs_calc_weak_sum(buffer, readed_bytes);
+	signature_element current_block_checksumm_data = signatures_vector[index];
+
+	// rs_mdfour((unsigned char *) sum, buf, len);
+
+	if (current_block_checksumm_data.weak_checksumm == weak_checksumm) {
+	    //std::cout<<"Signature match"<<endl;
+	} else {
+	    printf("Signature not matched! File weak summ: %08x signature file weak summ: %08x",
+		weak_checksumm, current_block_checksumm_data.weak_checksumm);
+	}
+
+	index++;
+    }
+
+    std::cout<<"Validation executed correctly!"<<endl;
+}
 
 bool read_signature_file() {
     string file_path = "/root/fastrdiff/root.hdd.signature";
@@ -128,10 +162,13 @@ bool read_signature_file() {
 	    break;
 	}
 
+	// Это нормальный код, он просто отключен!
+	/*
 	printf("weak: %08x offset: %lld ", weak_checksumm, offset);
 	printf("md4: ");
 	print_md4_summ(md4_checksumm_buffer, md4_truncation_from_file);
 	printf("\n");
+	*/
 
 	signature_element current_element;
 	strncpy(current_element.md4_checksumm, md4_checksumm_buffer, 8);
@@ -175,8 +212,7 @@ int read_int(int file_handle, int32_t* int_ptr) {
 
 // http://tau-itw.wikidot.com/saphe-implementation-common-hexlify-cpp
 // Convert to upper-case hex string
-void hexlify(const char* in, unsigned int size, char* out)
-{
+void hexlify(const char* in, unsigned int size, char* out) {
     for (unsigned int i = 0 ; i < size ; ++i) {
         for (int j = 0 ; j < 2 ; ++j) {
             char nib = (char)(( in[i] >> (4-(4*j)) ) & 0xF);
@@ -190,4 +226,42 @@ void hexlify(const char* in, unsigned int size, char* out)
         }        
     }
     out[size*2] = 0;
+}
+
+long long unsigned int get_file_size(const char* file_name) {
+    struct stat st; 
+    stat(file_name, &st);
+    
+    return st.st_size;
+}
+
+
+// Copy & Paste from: https://github.com/librsync/librsync/blob/master/checksum.c
+// GNU LGPL v2.1 
+
+/* We should make this something other than zero to improve the
+ * checksum algorithm: tridge suggests a prime number. */
+#define RS_CHAR_OFFSET 31
+
+/*
+ * A simple 32 bit checksum that can be updated from either end
+ * (inspired by Mark Adler's Adler-32 checksum)
+ */
+unsigned int rs_calc_weak_sum(void const *p, int len) {
+    int i;
+    unsigned        s1, s2;
+    unsigned char const    *buf = (unsigned char const *) p;
+
+    s1 = s2 = 0;
+    for (i = 0; i < (len - 4); i += 4) {
+	s2 += 4 * (s1 + buf[i]) + 3 * buf[i + 1] + 2 * buf[i + 2] + buf[i + 3] + 10 * RS_CHAR_OFFSET;
+	s1 += (buf[i + 0] + buf[i + 1] + buf[i + 2] + buf[i + 3] + 4 * RS_CHAR_OFFSET);
+    }
+
+    for (; i < len; i++) {
+	s1 += (buf[i] + RS_CHAR_OFFSET);
+        s2 += s1;
+    }
+    
+    return (s1 & 0xffff) + (s2 << 16);
 }
