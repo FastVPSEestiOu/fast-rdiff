@@ -9,6 +9,8 @@
 #include <sys/stat.h>
 #include <string.h>
 
+#include <openssl/md4.h>
+
 using namespace std;
 
 /*
@@ -26,6 +28,7 @@ typedef struct signature_element {
     unsigned long long offset;
 } signature_element;
 
+int strong_md4_checksumm(void const *p, int len, void* md4_digest);
 void process_file();
 unsigned int rs_calc_weak_sum(void const *p, int len);
 long long unsigned int get_file_size(const char* file_name);
@@ -58,6 +61,7 @@ void process_file() {
 
     void* buffer = malloc(block_size);
     unsigned long long int index = 0;
+    char md4_checksumm_buffer[8];
     while (true) {
 	int readed_bytes = read(file_handle, buffer, block_size);
 
@@ -68,10 +72,23 @@ void process_file() {
 	unsigned int weak_checksumm = rs_calc_weak_sum(buffer, readed_bytes);
 	signature_element current_block_checksumm_data = signatures_vector[index];
 
-	// rs_mdfour((unsigned char *) sum, buf, len);
-
 	if (current_block_checksumm_data.weak_checksumm == weak_checksumm) {
 	    //std::cout<<"Signature match"<<endl;
+	    if (!strong_md4_checksumm(buffer, readed_bytes, (void*)md4_checksumm_buffer)) {
+		std::cout<<"Can't calculate md4 cheksumm"<<endl;
+		break;
+	    }
+
+	    if (!strncmp(md4_checksumm_buffer, current_block_checksumm_data.md4_checksumm, 8)) {
+		// hashes are equal!
+	    } else {
+		printf("Hashes mismatch! ");
+		print_md4_summ(md4_checksumm_buffer, 8);
+		printf(" is not equal to ");
+		print_md4_summ(current_block_checksumm_data.md4_checksumm, 8);
+		printf("\n");
+		break;
+	    }
 	} else {
 	    printf("Signature not matched! File weak summ: %08x signature file weak summ: %08x",
 		weak_checksumm, current_block_checksumm_data.weak_checksumm);
@@ -80,7 +97,7 @@ void process_file() {
 	index++;
     }
 
-    std::cout<<"Validation executed correctly!"<<endl;
+    std::cout<<"Validation executed correctly with weak and strong checksumms!"<<endl;
 }
 
 bool read_signature_file() {
@@ -233,6 +250,24 @@ long long unsigned int get_file_size(const char* file_name) {
     stat(file_name, &st);
     
     return st.st_size;
+}
+
+int strong_md4_checksumm(void const *p, int len, void* md4_digest) {
+    MD4_CTX md4_context;
+
+    if (!MD4_Init(&md4_context)) {
+	return 0;
+    }
+
+    if (!MD4_Update(&md4_context, p, len)) {
+	return 0;
+    }
+    
+    if (!MD4_Final((unsigned char*)md4_digest, &md4_context)) {
+	return 0;
+    }
+
+    return 1;
 }
 
 
