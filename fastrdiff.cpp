@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <string.h>
+#include <time.h>
 
 #include <openssl/md4.h>
 
@@ -79,11 +80,15 @@ int main(int argc, char *argv[]) {
 
 /* Generate signature for specified file */
 bool generate_signature(string input_file_path, string signature_path) {
+    time_t start_time = time(NULL);
     int input_file_handle = open(input_file_path.c_str(), O_RDONLY);
+
     if (input_file_handle <= 0) {
 	std::cout<<"Can't open input file"<<endl;
 	return false;
     }
+
+    unsigned long long file_size = get_file_size(input_file_path.c_str());
 
     if (file_exists(signature_path)) {
 	std::cout<<"Signature file already exists, please remove it or change name"<<endl;
@@ -150,6 +155,13 @@ bool generate_signature(string input_file_path, string signature_path) {
 
     close(input_file_handle);
     close(signature_file_handle); 
+
+    time_t finish_time = time(NULL);
+    int total_time = finish_time - start_time;
+
+    if (total_time > 0) {
+        printf("Total time consumed by signature generation is: %d seconds generation speed: %.1f MB/s\n", total_time, (float)file_size / total_time / 1024 / 1024);
+    }
 }
 
 bool file_exists(string file_path) {
