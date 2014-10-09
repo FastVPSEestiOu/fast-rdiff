@@ -83,7 +83,7 @@ bool generate_signature() {
 	return false;
     }
 
-    int signature_file_handle = open(signature_path.c_str(), O_WRONLY|O_CREAT);
+    int signature_file_handle = open(signature_path.c_str(), O_WRONLY|O_CREAT, S_IRUSR|S_IWUSR);
 
     if (signature_file_handle <= 0) {
 	std::cout<<"Can't open signature file wor writing"<<endl;
