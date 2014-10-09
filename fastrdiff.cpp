@@ -1,5 +1,7 @@
 #include <iostream>
 #include <vector>
+#include <map>
+#include <utility>
 
 #include <stdint.h>
 #include <sys/fcntl.h>
@@ -9,12 +11,12 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <time.h>
-
 #include <openssl/md4.h>
 
 using namespace std;
 
 int32_t RS_SIG_MAGIC = 0x72730136;
+int32_t RS_DELTA_MAGIC = 0x72730236;
 
 /*
  Команды из дельты можно найти вот здесь: https://github.com/librsync/librsync/blob/master/command.c
@@ -25,11 +27,26 @@ int32_t RS_SIG_MAGIC = 0x72730136;
   rdiff signature --block-size 1048576 /root/broken_rdiff/root.hdd root.hdd.signature
 */
 
+
+// Просто так передать char[8] как ключ мы не можем, поэтому переопределяем ее как класс :)
+class char_8_struct_t {
+public:
+    char md4_checksumm[8];
+    
+    // TODO: улучшить компаратор!
+    bool operator< (char_8_struct_t const &c) const {
+        return md4_checksumm[0] < c.md4_checksumm[0];
+    }
+};
+
 typedef struct signature_element {
     char md4_checksumm[8];
     int32_t weak_checksumm;
     unsigned long long offset;
 } signature_element;
+
+typedef std::map<char_8_struct_t, unsigned long long> signatures_map_t;
+typedef vector<signature_element> signatures_vector_t;
 
 /* Prototypes */
 bool generate_signature(string input_file_path, string signature_path);
@@ -173,6 +190,20 @@ bool file_exists(string file_path) {
     } else {
 	return false;
     }
+}
+
+void generate_delta(string file_path, string signature_path) {
+    signatures_vector_t signatures_vector;
+    read_signature_file(signature_path, signatures_vector);
+
+    signatures_map_t signatures_map;
+
+    for (signatures_vector_t::iterator ii = signatures_vector.begin(); ii != signatures_vector.end(); ++ii) {
+        char_8_struct_t char_8_struct;
+        strncpy(char_8_struct.md4_checksumm, ii->md4_checksumm, sizeof(ii->md4_checksumm));
+
+        signatures_map[ char_8_struct ] = ii->offset;
+    }  
 }
 
 void validate_file(string file_path, string signature_path) {
