@@ -13,6 +13,8 @@
 
 using namespace std;
 
+int32_t RS_SIG_MAGIC = 0x72730136;
+
 /*
  Команды из дельты можно найти вот здесь: https://github.com/librsync/librsync/blob/master/command.c
 */
@@ -28,6 +30,10 @@ typedef struct signature_element {
     unsigned long long offset;
 } signature_element;
 
+/* Prototypes */
+bool generate_signature();
+bool file_exists(string file_path);
+int write_int_bigendian(int file_handle, int32_t integer_value);
 int strong_md4_checksumm(void const *p, int len, void* md4_digest);
 void process_file();
 unsigned int rs_calc_weak_sum(void const *p, int len);
@@ -39,20 +45,122 @@ bool read_signature_file();
 
 vector<signature_element> signatures_vector;
 
-int main() {
-    read_signature_file();
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+	printf("Please specify opertion type: signature, delta or patch");
+	exit (1);
+    }
 
-    process_file();
+    if (strcmp(argv[1], "signature") == 0) {
+	generate_signature();
+    } else if (strcmp(argv[1], "delta") == 0) {
+	read_signature_file();
+	process_file();
+    } else if (strcmp(argv[1], "patch") == 0) {
+	printf("patching is not realized yet");
+	exit(1);
+    } else {
+	printf("Not supported operation: %s\n", argv[1]);
+	exit(1);
+    }
 
     return 0;
 }
 
+/* Generate signature for specified file */
+bool generate_signature() {
+    string input_file_path = "/root/fastrdiff/root.hdd";
+    string signature_path = "/root/fastrdiff/root.hdd.sigmature.fastrdiff";
+    
+    int input_file_handle = open(input_file_path.c_str(), O_RDONLY);
+    if (input_file_handle <= 0) {
+	std::cout<<"Can't open input file"<<endl;
+	return false;
+    }
+
+    if (file_exists(signature_path)) {
+	std::cout<<"Signature file already exists, please remove it or change name"<<endl;
+	return false;
+    }
+
+    int signature_file_handle = open(signature_path.c_str(), O_WRONLY|O_CREAT);
+
+    if (signature_file_handle <= 0) {
+	std::cout<<"Can't open signature file wor writing"<<endl;
+	return false;
+    }
+
+    /* write SIGNATURE header */
+    uint32_t block_size = 1024 * 1024;
+    uint32_t md4_truncation = 8;
+
+    if (!write_int_bigendian(signature_file_handle, RS_SIG_MAGIC)) {
+	std::cout<<"Can't write signature header to signature file"<<endl;
+	return false;
+    }
+
+    if (!write_int_bigendian(signature_file_handle, block_size)) {
+	std::cout<<"Can't write block size to signature file"<<endl;
+	return false;
+    }	
+    
+    if (!write_int_bigendian(signature_file_handle, md4_truncation)) {
+	std::cout<<"Can't write md4 truncation to signature file"<<endl;
+	return false;
+    }
+
+    void* buffer = malloc(block_size);
+    char md4_checksumm_buffer[8];
+
+    while (true) {
+        int readed_bytes = read(input_file_handle, buffer, block_size);
+
+        if (readed_bytes <= 0) {
+            break;
+        }
+
+	unsigned int weak_checksumm = rs_calc_weak_sum(buffer, readed_bytes);
+  
+	if (!write_int_bigendian(signature_file_handle, weak_checksumm)) {
+	    std::cout<<"Can't write weak checksumm to file"<<endl;
+	    return false;
+	}
+ 
+	if (!strong_md4_checksumm(buffer, readed_bytes, (void*)md4_checksumm_buffer)) {
+	    std::cout<<"Can't generate md4 checksumm"<<endl;
+	    return false;
+	}
+
+	if (write(signature_file_handle, md4_checksumm_buffer, md4_truncation) != 8) {
+	    std::cout<<"Can't write md4 checksumm to signature file"<<endl;
+	    return false;
+	}
+    } 
+
+    fsync(signature_file_handle);
+
+    free(buffer);
+
+    close(input_file_handle);
+    close(signature_file_handle); 
+}
+
+bool file_exists(string file_path) {
+    struct stat st;
+    int result = stat(file_path.c_str(), &st);
+    
+    if (result == 0) {
+	return true;
+    } else {
+	return false;
+    }
+}
 
 void process_file() {
     string file_path = "/root/fastrdiff/root.hdd";
     int file_handle = open(file_path.c_str(), O_RDONLY);
 
-    if (!file_handle) {
+    if (file_handle <= 0) {
         std::cout<<"Can't open signature file"<<endl;
         return;   
     }
@@ -104,12 +212,11 @@ bool read_signature_file() {
     string file_path = "/root/fastrdiff/root.hdd.signature";
     int file_handle = open(file_path.c_str(), O_RDONLY);
 
-    if (!file_handle) {
+    if (file_handle <= 0) {
 	std::cout<<"Can't open signature file"<<endl;
 	return false;	
     } 
 
-    int32_t RS_SIG_MAGIC = 0x72730136;
     int32_t file_signature_from_file = 0;
     int32_t blocksize_from_file = 0;
     int32_t md4_truncation_from_file = 0;
@@ -225,7 +332,18 @@ int read_int(int file_handle, int32_t* int_ptr) {
     return 1;
 }
 
+int write_int_bigendian(int file_handle, int32_t integer_value) {
+    uint32_t encoded_integer = htobe32(integer_value);
 
+    int bytes_written = write(file_handle, &encoded_integer, sizeof(int32_t));
+
+    // так как может случиться так, что мы записали меньше байт, чем пытались
+    if (bytes_written == sizeof(int32_t)) {
+	return true;
+    } else {
+	return false;
+    }
+}
 
 // http://tau-itw.wikidot.com/saphe-implementation-common-hexlify-cpp
 // Convert to upper-case hex string

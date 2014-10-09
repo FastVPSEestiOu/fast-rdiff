@@ -1,3 +1,3 @@
 #!/bin/bash
 
-g++ fastrdiff.cpp -lssl
+g++ fastrdiff.cpp -lssl -ofastrdiff
