@@ -31,19 +31,17 @@ typedef struct signature_element {
 } signature_element;
 
 /* Prototypes */
-bool generate_signature();
+bool generate_signature(string input_file_path, string signature_path);
 bool file_exists(string file_path);
 int write_int_bigendian(int file_handle, int32_t integer_value);
 int strong_md4_checksumm(void const *p, int len, void* md4_digest);
-void process_file();
+void validate_file(string file_path, string signature_path);
 unsigned int rs_calc_weak_sum(void const *p, int len);
 long long unsigned int get_file_size(const char* file_name);
 void hexlify(const char* in, unsigned int size, char* out);
 void print_md4_summ(char* weak_checksumm, int md4_truncation_length);
 int read_int(int file_handle, int32_t* int_ptr);
-bool read_signature_file();
-
-vector<signature_element> signatures_vector;
+bool read_signature_file(string signature_file, vector<signature_element>& signatures_vector);
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -52,10 +50,22 @@ int main(int argc, char *argv[]) {
     }
 
     if (strcmp(argv[1], "signature") == 0) {
-	generate_signature();
+        if (argc < 4) { 
+            printf("Please specify source file and path to signature file\n");
+            exit(1);
+        }
+
+	generate_signature(argv[2], argv[3]);
+    } else if (strcmp(argv[1], "validate") == 0) {
+        if (argc < 4) {
+            printf("Please specify source file and path to signature file\n");
+            exit(1);
+        }
+
+	validate_file(argv[2], argv[3]);
     } else if (strcmp(argv[1], "delta") == 0) {
-	read_signature_file();
-	process_file();
+        printf("Delta generation is not realized yet");
+        exit(1);
     } else if (strcmp(argv[1], "patch") == 0) {
 	printf("patching is not realized yet");
 	exit(1);
@@ -68,10 +78,7 @@ int main(int argc, char *argv[]) {
 }
 
 /* Generate signature for specified file */
-bool generate_signature() {
-    string input_file_path = "/root/fastrdiff/root.hdd";
-    string signature_path = "/root/fastrdiff/root.hdd.sigmature.fastrdiff";
-    
+bool generate_signature(string input_file_path, string signature_path) {
     int input_file_handle = open(input_file_path.c_str(), O_RDONLY);
     if (input_file_handle <= 0) {
 	std::cout<<"Can't open input file"<<endl;
@@ -156,8 +163,11 @@ bool file_exists(string file_path) {
     }
 }
 
-void process_file() {
-    string file_path = "/root/fastrdiff/root.hdd";
+void validate_file(string file_path, string signature_path) {
+    vector<signature_element> signatures_vector;
+
+    read_signature_file(signature_path, signatures_vector);
+
     int file_handle = open(file_path.c_str(), O_RDONLY);
 
     if (file_handle <= 0) {
@@ -208,8 +218,7 @@ void process_file() {
     std::cout<<"Validation executed correctly with weak and strong checksumms!"<<endl;
 }
 
-bool read_signature_file() {
-    string file_path = "/root/fastrdiff/root.hdd.signature";
+bool read_signature_file(string file_path, vector<signature_element>& signatures_vector) {
     int file_handle = open(file_path.c_str(), O_RDONLY);
 
     if (file_handle <= 0) {
