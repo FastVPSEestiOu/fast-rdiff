@@ -25,14 +25,20 @@ int32_t RS_DELTA_MAGIC = 0x72730236;
 /*
  Генерация тест блока данных: 
   rdiff signature --block-size 1048576 /root/broken_rdiff/root.hdd root.hdd.signature
+
+TODO: 
+внимательно выверить все транкейты!!!! Чексумма генерируется длиньше, чем мы используем для буфера!!!
 */
 
 
 // Просто так передать char[8] как ключ мы не можем, поэтому переопределяем ее как класс :)
 class char_8_struct_t {
 public:
-    char md4_checksumm[8];
-    
+    unsigned char md4_checksumm[8];
+    //char_8_struct_t(char md4_checksumm[8]) {
+        // init
+    //}   
+ 
     // TODO: улучшить компаратор!
     bool operator< (char_8_struct_t const &c) const {
         return md4_checksumm[0] < c.md4_checksumm[0];
@@ -40,7 +46,7 @@ public:
 };
 
 typedef struct signature_element {
-    char md4_checksumm[8];
+    unsigned char md4_checksumm[8];
     int32_t weak_checksumm;
     unsigned long long offset;
 } signature_element;
@@ -49,15 +55,16 @@ typedef std::map<char_8_struct_t, unsigned long long> signatures_map_t;
 typedef vector<signature_element> signatures_vector_t;
 
 /* Prototypes */
+void generate_delta(string file_path, string signature_path);
 bool generate_signature(string input_file_path, string signature_path);
 bool file_exists(string file_path);
 int write_int_bigendian(int file_handle, int32_t integer_value);
-int strong_md4_checksumm(void const *p, int len, void* md4_digest);
+int strong_md4_checksumm(void const *p, int len, unsigned char* md4_digest, unsigned int truncate_length);
 void validate_file(string file_path, string signature_path);
 unsigned int rs_calc_weak_sum(void const *p, int len);
 long long unsigned int get_file_size(const char* file_name);
 void hexlify(const char* in, unsigned int size, char* out);
-void print_md4_summ(char* weak_checksumm, int md4_truncation_length);
+void print_md4_summ(unsigned char* weak_checksumm, int md4_truncation_length);
 int read_int(int file_handle, int32_t* int_ptr);
 bool read_signature_file(string signature_file, vector<signature_element>& signatures_vector);
 
@@ -82,7 +89,12 @@ int main(int argc, char *argv[]) {
 
 	validate_file(argv[2], argv[3]);
     } else if (strcmp(argv[1], "delta") == 0) {
-        printf("Delta generation is not realized yet");
+        if (argc < 4) {
+            printf("Please specify source file and path to signature file\n");
+            exit(1);
+        }
+
+        generate_delta(argv[2], argv[3]);
         exit(1);
     } else if (strcmp(argv[1], "patch") == 0) {
 	printf("patching is not realized yet");
@@ -139,7 +151,7 @@ bool generate_signature(string input_file_path, string signature_path) {
     }
 
     void* buffer = malloc(block_size);
-    char md4_checksumm_buffer[8];
+    unsigned char md4_checksumm_buffer[8];
 
     while (true) {
         int readed_bytes = read(input_file_handle, buffer, block_size);
@@ -155,7 +167,7 @@ bool generate_signature(string input_file_path, string signature_path) {
 	    return false;
 	}
  
-	if (!strong_md4_checksumm(buffer, readed_bytes, (void*)md4_checksumm_buffer)) {
+	if (!strong_md4_checksumm(buffer, readed_bytes, md4_checksumm_buffer, md4_truncation)) {
 	    std::cout<<"Can't generate md4 checksumm"<<endl;
 	    return false;
 	}
@@ -193,17 +205,76 @@ bool file_exists(string file_path) {
 }
 
 void generate_delta(string file_path, string signature_path) {
+    int file_handle = open(file_path.c_str(), O_RDONLY);
+
+    if (file_handle <= 0) {
+        std::cout<<"Can't open signature file"<<endl;
+        return;
+    }
+
     signatures_vector_t signatures_vector;
-    read_signature_file(signature_path, signatures_vector);
+    if (!read_signature_file(signature_path, signatures_vector)) {
+        std::cout<<"Can't read signature file! Stop!"<<endl;
+        return;
+    }
 
     signatures_map_t signatures_map;
 
+    // TODO: add to map without vector
     for (signatures_vector_t::iterator ii = signatures_vector.begin(); ii != signatures_vector.end(); ++ii) {
         char_8_struct_t char_8_struct;
-        strncpy(char_8_struct.md4_checksumm, ii->md4_checksumm, sizeof(ii->md4_checksumm));
+        memcpy(char_8_struct.md4_checksumm, ii->md4_checksumm, sizeof(ii->md4_checksumm));
 
         signatures_map[ char_8_struct ] = ii->offset;
-    }  
+    } 
+
+    // clean up vector
+    signatures_vector.clear();
+
+    unsigned int block_size = 1048576;  
+    void* buffer = malloc(block_size);
+    unsigned long long int current_offset = 0; 
+    unsigned char md4_checksumm_buffer[8];
+ 
+    while (true) {
+        int readed_bytes = read(file_handle, buffer, block_size);
+
+        if (readed_bytes <= 0) {
+            // Write end of file!!!
+            break;
+        }
+
+        if (!strong_md4_checksumm(buffer, readed_bytes, md4_checksumm_buffer, 8)) {
+            std::cout<<"Can't calculate md4 cheksumm"<<endl;
+            break;
+        }
+
+        // construct key
+        char_8_struct_t char_8_struct;
+        memcpy(char_8_struct.md4_checksumm, md4_checksumm_buffer, sizeof(md4_checksumm_buffer));
+
+        // try to find it in signature
+        signatures_map_t::iterator it = signatures_map.find(char_8_struct);
+        if (it == signatures_map.end()) {
+            // not found
+            // INITIATE COPY
+            std::cout<<"Not match: new literal"<<endl;
+        } else {
+            // found
+            unsigned long long int md4_offset = it->second;
+            // INITIALE LITERAL
+            std::cout<<"Match: copy, offset: "<<md4_offset<<endl;
+
+            if (md4_offset == current_offset) {
+                std::cout<<"In place"<<endl; 
+            } else {
+                std::cout<<"Data shift"<<endl;
+            }
+        }
+
+        current_offset += block_size; 
+    }
+
 }
 
 void validate_file(string file_path, string signature_path) {
@@ -217,12 +288,11 @@ void validate_file(string file_path, string signature_path) {
         std::cout<<"Can't open signature file"<<endl;
         return;   
     }
-
     unsigned int block_size = 1048576; 
 
     void* buffer = malloc(block_size);
     unsigned long long int index = 0;
-    char md4_checksumm_buffer[8];
+    unsigned char md4_checksumm_buffer[8];
     while (true) {
 	int readed_bytes = read(file_handle, buffer, block_size);
 
@@ -235,12 +305,12 @@ void validate_file(string file_path, string signature_path) {
 
 	if (current_block_checksumm_data.weak_checksumm == weak_checksumm) {
 	    //std::cout<<"Signature match"<<endl;
-	    if (!strong_md4_checksumm(buffer, readed_bytes, (void*)md4_checksumm_buffer)) {
+	    if (!strong_md4_checksumm(buffer, readed_bytes, md4_checksumm_buffer, 8)) {
 		std::cout<<"Can't calculate md4 cheksumm"<<endl;
 		break;
 	    }
 
-	    if (!strncmp(md4_checksumm_buffer, current_block_checksumm_data.md4_checksumm, 8)) {
+	    if (!memcmp(md4_checksumm_buffer, current_block_checksumm_data.md4_checksumm, 8)) {
 		// hashes are equal!
 	    } else {
 		printf("Hashes mismatch! ");
@@ -251,7 +321,7 @@ void validate_file(string file_path, string signature_path) {
 		break;
 	    }
 	} else {
-	    printf("Signature not matched! File weak summ: %08x signature file weak summ: %08x",
+	    printf("Signature not matched! File weak summ: %08x signature file weak summ: %08x\n",
 		weak_checksumm, current_block_checksumm_data.weak_checksumm);
 	}
 
@@ -347,7 +417,7 @@ bool read_signature_file(string file_path, vector<signature_element>& signatures
 	*/
 
 	signature_element current_element;
-	strncpy(current_element.md4_checksumm, md4_checksumm_buffer, 8);
+	memcpy(current_element.md4_checksumm, md4_checksumm_buffer, 8);
 	current_element.weak_checksumm = weak_checksumm;
 	current_element.offset = offset;
 	
@@ -359,10 +429,10 @@ bool read_signature_file(string file_path, vector<signature_element>& signatures
     return true;
 }
 
-void print_md4_summ(char* md4_checksumm, int md4_truncation_length) {
+void print_md4_summ(unsigned char* md4_checksumm, int md4_truncation_length) {
     char output[32];
 
-    hexlify(md4_checksumm, md4_truncation_length, output);
+    hexlify((char*)md4_checksumm, md4_truncation_length, output);
     printf("%s", output);
 }
 
@@ -422,7 +492,10 @@ long long unsigned int get_file_size(const char* file_name) {
     return st.st_size;
 }
 
-int strong_md4_checksumm(void const *p, int len, void* md4_digest) {
+int strong_md4_checksumm(void const *p, int len, unsigned char* md4_digest, unsigned int truncate_length) {
+    // THREAD SAFETY IN DANGER!!!
+    static unsigned char md4_16byte_buffer[16];
+
     MD4_CTX md4_context;
 
     if (!MD4_Init(&md4_context)) {
@@ -432,9 +505,19 @@ int strong_md4_checksumm(void const *p, int len, void* md4_digest) {
     if (!MD4_Update(&md4_context, p, len)) {
 	return 0;
     }
-    
-    if (!MD4_Final((unsigned char*)md4_digest, &md4_context)) {
-	return 0;
+
+       
+    if (truncate_length == 16) {
+        if (!MD4_Final(md4_digest, &md4_context)) {
+	    return 0;
+        }
+    } else {
+       // В противном случае нам нужно положить данные в буфер и уже оттуда выдать тому, кто их требует 
+        if (!MD4_Final(md4_16byte_buffer, &md4_context)) {
+            return 0;
+        }
+
+        memcpy(md4_digest, md4_16byte_buffer, truncate_length);
     }
 
     return 1;
