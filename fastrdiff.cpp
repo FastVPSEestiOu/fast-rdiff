@@ -55,7 +55,7 @@ typedef std::map<char_8_struct_t, unsigned long long> signatures_map_t;
 typedef vector<signature_element> signatures_vector_t;
 
 /* Prototypes */
-void generate_delta(string file_path, string signature_path);
+void generate_delta(string file_path, string signature_path, string delta_path);
 bool generate_signature(string input_file_path, string signature_path);
 bool file_exists(string file_path);
 int write_int_bigendian(int file_handle, int32_t integer_value);
@@ -90,11 +90,11 @@ int main(int argc, char *argv[]) {
 	validate_file(argv[2], argv[3]);
     } else if (strcmp(argv[1], "delta") == 0) {
         if (argc < 4) {
-            printf("Please specify source file and path to signature file\n");
+            printf("Please specify source file, path to signature and path to delta file\n");
             exit(1);
         }
 
-        generate_delta(argv[2], argv[3]);
+        generate_delta(argv[2], argv[3], argv[4]);
         exit(1);
     } else if (strcmp(argv[1], "patch") == 0) {
 	printf("patching is not realized yet");
@@ -204,13 +204,18 @@ bool file_exists(string file_path) {
     }
 }
 
-void generate_delta(string file_path, string signature_path) {
+void generate_delta(string file_path, string signature_path, string delta_path) {
     int file_handle = open(file_path.c_str(), O_RDONLY);
 
     if (file_handle <= 0) {
         std::cout<<"Can't open signature file"<<endl;
         return;
     }
+
+    if (file_exists(delta_path)) {
+        std::cout<<"Delta file already exists, please check it"<<endl;
+        return;
+    }   
 
     signatures_vector_t signatures_vector;
     if (!read_signature_file(signature_path, signatures_vector)) {
@@ -228,6 +233,13 @@ void generate_delta(string file_path, string signature_path) {
         signatures_map[ char_8_struct ] = ii->offset;
     } 
 
+    int delta_file_handle = open(delta_path.c_str(), O_WRONLY|O_CREAT, S_IRUSR|S_IWUSR);
+    
+    if (delta_file_handle <= 0) {
+        std::cout<<"Can't open delta file for writing"<<endl;
+        return;
+    }
+
     // clean up vector
     signatures_vector.clear();
 
@@ -235,6 +247,9 @@ void generate_delta(string file_path, string signature_path) {
     void* buffer = malloc(block_size);
     unsigned long long int current_offset = 0; 
     unsigned char md4_checksumm_buffer[8];
+
+    // Add DELTA signature
+    write_int_bigendian(delta_file_handle, RS_DELTA_MAGIC);
  
     while (true) {
         int readed_bytes = read(file_handle, buffer, block_size);
@@ -257,12 +272,18 @@ void generate_delta(string file_path, string signature_path) {
         signatures_map_t::iterator it = signatures_map.find(char_8_struct);
         if (it == signatures_map.end()) {
             // not found
-            // INITIATE COPY
+            // INITIATE LITERAL
             std::cout<<"Not match: new literal"<<endl;
+            /*
+                literal_len = len(self.data)
+                literal_len_length = byte_length(literal_len)
+                command = 0x41 + log2(literal_len_length)
+                return command.to_bytes(1, 'big') + literal_len.to_bytes(literal_len_length, 'big') + self.data
+            */
         } else {
             // found
             unsigned long long int md4_offset = it->second;
-            // INITIALE LITERAL
+            // INITIALE COPY
             std::cout<<"Match: copy, offset: "<<md4_offset<<endl;
 
             if (md4_offset == current_offset) {
@@ -270,11 +291,25 @@ void generate_delta(string file_path, string signature_path) {
             } else {
                 std::cout<<"Data shift"<<endl;
             }
+
+            /*  
+                offset_len = byte_length(self.offset)
+                length_len = byte_length(self.length)
+                command = 0x45 + ( log2(offset_len) * 4 ) + log2(length_len)
+                return command.to_bytes(1, 'big') + self.offset.to_bytes(offset_len, 'big') + self.length.to_bytes(length_len, 'big')
+            */ 
+
         }
 
         current_offset += block_size; 
     }
 
+    // Write finish byte!
+    uint32_t zero_integer = 0;
+    if (write(delta_file_handle, &zero_integer, 1) != 1) {
+        std::cout<<"Can't wrote finish byte"<<endl;
+        return;
+    }
 }
 
 void validate_file(string file_path, string signature_path) {
