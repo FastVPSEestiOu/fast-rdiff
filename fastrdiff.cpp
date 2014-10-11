@@ -25,9 +25,6 @@ int32_t RS_DELTA_MAGIC = 0x72730236;
 /*
  Генерация тест блока данных: 
   rdiff signature --block-size 1048576 /root/broken_rdiff/root.hdd root.hdd.signature
-
-TODO: 
-внимательно выверить все транкейты!!!! Чексумма генерируется длиньше, чем мы используем для буфера!!!
 */
 
 
@@ -217,6 +214,13 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
         return;
     }   
 
+    unsigned long long current_file_size = get_file_size(file_path.c_str());
+
+    if (current_file_size % 1024*1024 != 0) {
+        std::cout<<"We support only files multiples 1MB blocks"<<std::endl;
+        return;
+    }
+
     signatures_vector_t signatures_vector;
     if (!read_signature_file(signature_path, signatures_vector)) {
         std::cout<<"Can't read signature file! Stop!"<<endl;
@@ -238,6 +242,17 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
     if (delta_file_handle <= 0) {
         std::cout<<"Can't open delta file for writing"<<endl;
         return;
+    }
+
+    // Таким образом мы можем узнать точный размер старого файла 
+    unsigned long long old_file_size = 1024 * 1024 * signatures_vector.size();
+
+    if (current_file_size == old_file_size) {
+        cout<<"File size is not changed"<<endl;
+    } else if (current_file_size > old_file_size) {
+        cout<<"New file has increased size"<<endl;
+    } else {
+        cout<<"New file was shrinked"<<endl;
     }
 
     // clean up vector
