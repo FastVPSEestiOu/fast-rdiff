@@ -22,6 +22,9 @@ int32_t RS_DELTA_MAGIC = 0x72730236;
  Команды из дельты можно найти вот здесь: https://github.com/librsync/librsync/blob/master/command.c
 */
 
+// Вот так можно перетереть 1 байт в начале файла:
+// dd if=/dev/urandom count=1 bs=1 of=64zero conv=notrunc 
+
 /*
  Генерация тест блока данных: 
   rdiff signature --block-size 1048576 /root/broken_rdiff/root.hdd root.hdd.signature
@@ -29,18 +32,15 @@ int32_t RS_DELTA_MAGIC = 0x72730236;
 
 
 // Просто так передать char[8] как ключ мы не можем, поэтому переопределяем ее как класс :)
-class char_8_struct_t {
-public:
-    unsigned char md4_checksumm[8];
-    //char_8_struct_t(char md4_checksumm[8]) {
-        // init
-    //}   
- 
+// оно нищадно глючило с выборками!
+//class char_8_struct_t {
+//public:
+//    unsigned char md4_checksumm[8];
     // TODO: улучшить компаратор!
-    bool operator< (char_8_struct_t const &c) const {
-        return md4_checksumm[0] < c.md4_checksumm[0];
-    }
-};
+//    bool operator< (char_8_struct_t const &c) const {
+//        return this->md4_checksumm[0] < c.md4_checksumm[0];
+//    }
+//};
 
 typedef struct signature_element {
     unsigned char md4_checksumm[8];
@@ -48,10 +48,12 @@ typedef struct signature_element {
     unsigned long long offset;
 } signature_element;
 
-typedef std::map<char_8_struct_t, unsigned long long> signatures_map_t;
+typedef std::map<std::string, unsigned long long> signatures_map_t;
 typedef vector<signature_element> signatures_vector_t;
 
 /* Prototypes */
+string stringify_md4_checksumm(unsigned char* md4_checksumm, int md4_truncation_length);
+int rs_int_len(long long int val);
 void generate_delta(string file_path, string signature_path, string delta_path);
 bool generate_signature(string input_file_path, string signature_path);
 bool file_exists(string file_path);
@@ -231,10 +233,9 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
 
     // TODO: add to map without vector
     for (signatures_vector_t::iterator ii = signatures_vector.begin(); ii != signatures_vector.end(); ++ii) {
-        char_8_struct_t char_8_struct;
-        memcpy(char_8_struct.md4_checksumm, ii->md4_checksumm, sizeof(ii->md4_checksumm));
+        string md4_as_string = stringify_md4_checksumm(ii->md4_checksumm, 8);
 
-        signatures_map[ char_8_struct ] = ii->offset;
+        signatures_map[ md4_as_string ] = ii->offset;
     } 
 
     int delta_file_handle = open(delta_path.c_str(), O_WRONLY|O_CREAT, S_IRUSR|S_IWUSR);
@@ -280,21 +281,28 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
         }
 
         // construct key
-        char_8_struct_t char_8_struct;
-        memcpy(char_8_struct.md4_checksumm, md4_checksumm_buffer, sizeof(md4_checksumm_buffer));
+        string md4_as_string = stringify_md4_checksumm(md4_checksumm_buffer, 8);
 
         // try to find it in signature
-        signatures_map_t::iterator it = signatures_map.find(char_8_struct);
+        //print_md4_summ(md4_as_string, 8);
+        signatures_map_t::iterator it = signatures_map.find(md4_as_string);
         if (it == signatures_map.end()) {
             // not found
             // INITIATE LITERAL
             std::cout<<"Not match: new literal"<<endl;
+            // в коде librsync: rs_emit_literal_cmd
             /*
                 literal_len = len(self.data)
                 literal_len_length = byte_length(literal_len)
                 command = 0x41 + log2(literal_len_length)
                 return command.to_bytes(1, 'big') + literal_len.to_bytes(literal_len_length, 'big') + self.data
             */
+            
+            // Размер литерала у нас не меняется
+            int literal_len = 1024*1024;
+            // в общем-то этот параметр тоже можно зафиксировать и не дергать функцию
+            int literal_len_len = rs_int_len(literal_len);
+            std::cout<<"Literal len len is: "<<literal_len_len<<endl;
         } else {
             // found
             unsigned long long int md4_offset = it->second;
@@ -307,6 +315,7 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
                 std::cout<<"Data shift"<<endl;
             }
 
+            // в коде librsync: rs_emit_copy_cmd
             /*  
                 offset_len = byte_length(self.offset)
                 length_len = byte_length(self.length)
@@ -327,6 +336,7 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
     }
 }
 
+// TODO: валидатор кривой, не сверяет размер толком, в случае если файл удлиннился ничего не сработает нормально
 void validate_file(string file_path, string signature_path) {
     vector<signature_element> signatures_vector;
 
@@ -343,6 +353,8 @@ void validate_file(string file_path, string signature_path) {
     void* buffer = malloc(block_size);
     unsigned long long int index = 0;
     unsigned char md4_checksumm_buffer[8];
+
+    bool validation_success = true;
     while (true) {
 	int readed_bytes = read(file_handle, buffer, block_size);
 
@@ -357,28 +369,35 @@ void validate_file(string file_path, string signature_path) {
 	    //std::cout<<"Signature match"<<endl;
 	    if (!strong_md4_checksumm(buffer, readed_bytes, md4_checksumm_buffer, 8)) {
 		std::cout<<"Can't calculate md4 cheksumm"<<endl;
+                validation_success = false;
 		break;
 	    }
 
 	    if (!memcmp(md4_checksumm_buffer, current_block_checksumm_data.md4_checksumm, 8)) {
 		// hashes are equal!
 	    } else {
-		printf("Hashes mismatch! ");
+		printf("Hashes mismatch at %lld! ", index);
 		print_md4_summ(md4_checksumm_buffer, 8);
 		printf(" is not equal to ");
 		print_md4_summ(current_block_checksumm_data.md4_checksumm, 8);
 		printf("\n");
+                validation_success = false;
 		break;
 	    }
 	} else {
-	    printf("Signature not matched! File weak summ: %08x signature file weak summ: %08x\n",
-		weak_checksumm, current_block_checksumm_data.weak_checksumm);
+	    printf("Signature not matched at %lld MB! File weak summ: %08x signature file weak summ: %08x\n",
+		index, weak_checksumm, current_block_checksumm_data.weak_checksumm);
+
+            validation_success = false;
+            break;
 	}
 
 	index++;
     }
 
-    std::cout<<"Validation executed correctly with weak and strong checksumms!"<<endl;
+    if (validation_success) {
+        std::cout<<"Validation executed correctly with weak and strong checksumms!"<<endl;
+    }
 }
 
 bool read_signature_file(string file_path, vector<signature_element>& signatures_vector) {
@@ -484,6 +503,15 @@ void print_md4_summ(unsigned char* md4_checksumm, int md4_truncation_length) {
 
     hexlify((char*)md4_checksumm, md4_truncation_length, output);
     printf("%s", output);
+}
+
+string stringify_md4_checksumm(unsigned char* md4_checksumm, int md4_truncation_length) {
+    // THIS CAN KILL THREADFUL APPICATION!!!
+    static char output[32];
+
+    hexlify((char*)md4_checksumm, md4_truncation_length, output);
+
+    return std::string(output);
 }
 
 int read_int(int file_handle, int32_t* int_ptr) {
@@ -602,4 +630,21 @@ unsigned int rs_calc_weak_sum(void const *p, int len) {
     }
     
     return (s1 & 0xffff) + (s2 << 16);
+}
+
+// Copy & Paste from: librsync, netint.c
+// тип rs_long_t был заменен на long long int
+int rs_int_len(long long int val) {
+    if (!(val & ~(long long int)0xff)) {
+        return 1;
+    } else if (!(val & ~(long long int)0xffff)) {
+        return 2;
+    } else if (!(val & ~(long long int)0xffffffff)) {
+        return 4;
+    } else if (!(val & ~(long long int)0xffffffffffffffff)) {
+        return 8;
+    } else {
+        std::cout<<"Can't encode integer"<<endl;
+        exit(1);
+    }
 }
