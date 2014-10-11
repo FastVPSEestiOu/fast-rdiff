@@ -11,6 +11,8 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
+
 #include <openssl/md4.h>
 
 using namespace std;
@@ -52,6 +54,7 @@ typedef std::map<std::string, unsigned long long> signatures_map_t;
 typedef vector<signature_element> signatures_vector_t;
 
 /* Prototypes */
+int int_log2(int index);
 string stringify_md4_checksumm(unsigned char* md4_checksumm, int md4_truncation_length);
 int rs_int_len(long long int val);
 void generate_delta(string file_path, string signature_path, string delta_path);
@@ -299,10 +302,31 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
             */
             
             // Размер литерала у нас не меняется
-            int literal_len = 1024*1024;
+            int literal_len = block_size;
+            //int literal_len_len = rs_int_len(literal_len);
             // в общем-то этот параметр тоже можно зафиксировать и не дергать функцию
-            int literal_len_len = rs_int_len(literal_len);
-            std::cout<<"Literal len len is: "<<literal_len_len<<endl;
+            int32_t literal_len_len = 4;
+            int32_t command = 0x41 + int_log2(literal_len_len);
+
+            // TODO: пишем команду в файл
+            // Тут у therealmik странность, зачем 1 байт преобразовыввать в big endian? Он же не изменится :)
+            // Учитывая, что у нас little endian, то все значащие данные у нас в самом начале 4х байтового целого
+            if (write(delta_file_handle, &command, 1) != 1) {
+                std::cout<<"Can't write command to file"<<endl;
+                exit(1);
+            }
+
+            // В общем случае так делать нельзя, но у нас известно, что файлы по 1 миллиону байт
+            // и этот размер у нас всегда 4х байтовый
+            if (!write_int_bigendian(delta_file_handle, literal_len_len)) {
+                std::cout<<"Can't write literal len"<<endl;
+                exit(1);
+            }
+
+            if (write(delta_file_handle, buffer, block_size) != block_size) {
+                std::cout<<"Can't write literal to delta file"<<endl;
+                exit(1);
+            }
         } else {
             // found
             unsigned long long int md4_offset = it->second;
@@ -647,4 +671,10 @@ int rs_int_len(long long int val) {
         std::cout<<"Can't encode integer"<<endl;
         exit(1);
     }
+}
+
+// Целочисленный логарифм по основанию 2, потенциальный киллер безопасности,
+// так как использует  арифметику с плавающей запятой!
+int int_log2(int index) {
+    return int(log(index)/log(2));
 }
