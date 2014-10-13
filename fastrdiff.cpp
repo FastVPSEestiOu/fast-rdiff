@@ -61,6 +61,7 @@ void generate_delta(string file_path, string signature_path, string delta_path);
 bool generate_signature(string input_file_path, string signature_path);
 bool file_exists(string file_path);
 int write_int_bigendian(int file_handle, int32_t integer_value);
+int write_64_int_bigendian(int file_handle, long long int integer_value);
 int strong_md4_checksumm(void const *p, int len, unsigned char* md4_digest, unsigned int truncate_length);
 void validate_file(string file_path, string signature_path);
 unsigned int rs_calc_weak_sum(void const *p, int len);
@@ -316,7 +317,7 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
                 exit(1);
             }
 
-            // В общем случае так делать нельзя, но у нас известно, что файлы по 1 миллиону байт
+            // В общем случае так делать нельзя, но у нас известно, что блоки по 1 миллиону байт
             // и этот размер у нас всегда 4х байтовый
             if (!write_int_bigendian(delta_file_handle, literal_len_len)) {
                 std::cout<<"Can't write literal len"<<endl;
@@ -334,9 +335,9 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
             std::cout<<"Match: copy, offset: "<<md4_offset<<endl;
 
             if (md4_offset == current_offset) {
-                std::cout<<"In place"<<endl; 
+                //std::cout<<"In place"<<endl; 
             } else {
-                std::cout<<"Data shift"<<endl;
+                //std::cout<<"Data shift"<<endl;
             }
 
             // в коде librsync: rs_emit_copy_cmd
@@ -347,6 +348,28 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
                 return command.to_bytes(1, 'big') + self.offset.to_bytes(offset_len, 'big') + self.length.to_bytes(length_len, 'big')
             */ 
 
+            //int offset_length = rs_int_len(md4_offset);
+            int offset_length = 8; // Упростим код и будем рассматривать все смещения как 8 байтовые и всего делов
+            int length_length = rs_int_len(block_size);
+
+            int32_t command = 0x45 + int_log2(offset_length) * 4 + int_log2(length_length);
+            
+            if (write(delta_file_handle, &command, 1) != 1) {
+                std::cout<<"Can't write command to file"<<endl;
+                exit(1);
+            }
+
+            if (!write_64_int_bigendian(delta_file_handle, md4_offset)) {
+                std::cout<<"Can't write command t"<<endl;
+                exit(1);
+            }
+    
+            // В общем случае так делать нельзя, но у нас известно, что файлы по 1 миллиону байт
+            // и этот размер у нас всегда 4х байтовый
+            if (!write_int_bigendian(delta_file_handle, length_length)) {
+                std::cout<<"Can't write literal len"<<endl;
+                exit(1);
+            }
         }
 
         current_offset += block_size; 
@@ -566,6 +589,18 @@ int write_int_bigendian(int file_handle, int32_t integer_value) {
 	return true;
     } else {
 	return false;
+    }
+}
+
+int write_64_int_bigendian(int file_handle, long long int integer_value) {
+    long long int encoded_integer = htobe64(integer_value);
+
+    int bytes_written = write(file_handle, &encoded_integer, sizeof(long long int));
+    
+    if (bytes_written == sizeof(long long int)) {
+        return true;
+    } else {
+        return false;
     }
 }
 
