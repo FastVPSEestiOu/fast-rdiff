@@ -293,7 +293,7 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
         if (it == signatures_map.end()) {
             // not found
             // INITIATE LITERAL
-            std::cout<<"Not match: new literal"<<endl;
+            // std::cout<<"Not match: new literal"<<endl;
             // в коде librsync: rs_emit_literal_cmd
             /*
                 literal_len = len(self.data)
@@ -332,7 +332,7 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
             // found
             unsigned long long int md4_offset = it->second;
             // INITIALE COPY
-            std::cout<<"Match: copy, offset: "<<md4_offset<<endl;
+            // std::cout<<"Match: copy, offset: "<<md4_offset<<endl;
 
             if (md4_offset == current_offset) {
                 //std::cout<<"In place"<<endl; 
