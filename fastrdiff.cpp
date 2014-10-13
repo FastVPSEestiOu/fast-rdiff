@@ -303,14 +303,14 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
             
             // Размер литерала у нас не меняется
             int literal_len = block_size;
-            //int literal_len_len = rs_int_len(literal_len);
+            int literal_len_len = rs_int_len(literal_len);
             // в общем-то этот параметр тоже можно зафиксировать и не дергать функцию
-            int32_t literal_len_len = 4;
+            // int32_t literal_len_len = 4;
             int32_t command = 0x41 + int_log2(literal_len_len);
 
-            // TODO: пишем команду в файл
             // Тут у therealmik странность, зачем 1 байт преобразовыввать в big endian? Он же не изменится :)
             // Учитывая, что у нас little endian, то все значащие данные у нас в самом начале 4х байтового целого
+            // проверил этот подход на тест стенде, все ок!
             if (write(delta_file_handle, &command, 1) != 1) {
                 std::cout<<"Can't write command to file"<<endl;
                 exit(1);
