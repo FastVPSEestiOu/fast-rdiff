@@ -210,6 +210,9 @@ bool file_exists(string file_path) {
 void generate_delta(string file_path, string signature_path, string delta_path) {
     int file_handle = open(file_path.c_str(), O_RDONLY);
 
+    time_t start_time = time(NULL);
+    unsigned long long file_size = get_file_size(file_path.c_str());
+
     if (file_handle <= 0) {
         std::cout<<"Can't open signature file"<<endl;
         return;
@@ -388,6 +391,13 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
         std::cout<<"Can't wrote finish byte"<<endl;
         return;
     }
+
+    time_t finish_time = time(NULL);
+    int total_time = finish_time - start_time;
+
+    if (total_time > 0) {
+        printf("Total time consumed by delta generation is: %d seconds generation speed: %.1f MB/s\n", total_time, (float)file_size / total_time / 1024 / 1024);
+    } 
 }
 
 // TODO: валидатор кривой, не сверяет размер толком, в случае если файл удлиннился ничего не сработает нормально
