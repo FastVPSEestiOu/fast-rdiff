@@ -57,7 +57,7 @@ typedef vector<signature_element> signatures_vector_t;
 int int_log2(int index);
 string stringify_md4_checksumm(unsigned char* md4_checksumm, int md4_truncation_length);
 int rs_int_len(long long int val);
-void generate_delta(string file_path, string signature_path, string delta_path);
+void generate_delta(string signature_path, string file_path, string delta_path);
 bool generate_signature(string input_file_path, string signature_path);
 bool file_exists(string file_path);
 int write_int_bigendian(int file_handle, int32_t integer_value);
@@ -93,7 +93,7 @@ int main(int argc, char *argv[]) {
 	validate_file(argv[2], argv[3]);
     } else if (strcmp(argv[1], "delta") == 0) {
         if (argc < 4) {
-            printf("Please specify source file, path to signature and path to delta file\n");
+            printf("Please specify: signature file, new file and delta file paths\n");
             exit(1);
         }
 
@@ -207,7 +207,7 @@ bool file_exists(string file_path) {
     }
 }
 
-void generate_delta(string file_path, string signature_path, string delta_path) {
+void generate_delta(string signature_path, string file_path, string delta_path) {
     int file_handle = open(file_path.c_str(), O_RDONLY);
 
     time_t start_time = time(NULL);
