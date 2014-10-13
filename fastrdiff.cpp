@@ -17,6 +17,7 @@
 
 using namespace std;
 
+/* rdiff signatures */
 int32_t RS_SIG_MAGIC = 0x72730136;
 int32_t RS_DELTA_MAGIC = 0x72730236;
 
@@ -31,30 +32,6 @@ int32_t RS_DELTA_MAGIC = 0x72730236;
 7. Сделаеть указываемый извне blocksize
 
 */
-
-/*
- Команды из дельты можно найти вот здесь: https://github.com/librsync/librsync/blob/master/command.c
-*/
-
-// Вот так можно перетереть 1 байт в начале файла:
-// dd if=/dev/urandom count=1 bs=1 of=64zero conv=notrunc 
-
-/*
- Генерация тест блока данных: 
-  rdiff signature --block-size 1048576 /root/broken_rdiff/root.hdd root.hdd.signature
-*/
-
-
-// Просто так передать char[8] как ключ мы не можем, поэтому переопределяем ее как класс :)
-// оно нищадно глючило с выборками!
-//class char_8_struct_t {
-//public:
-//    unsigned char md4_checksumm[8];
-    // TODO: улучшить компаратор!
-//    bool operator< (char_8_struct_t const &c) const {
-//        return this->md4_checksumm[0] < c.md4_checksumm[0];
-//    }
-//};
 
 typedef struct signature_element {
     unsigned char md4_checksumm[8];
@@ -95,7 +72,11 @@ int main(int argc, char *argv[]) {
             exit(1);
         }
 
-	generate_signature(argv[2], argv[3]);
+	if (generate_signature(argv[2], argv[3])) {
+            return 0;
+        } else {
+            return 1;
+        }
     } else if (strcmp(argv[1], "validate") == 0) {
         if (argc < 4) {
             printf("Please specify source file and path to signature file\n");
@@ -210,6 +191,8 @@ bool generate_signature(string input_file_path, string signature_path) {
     if (total_time > 0) {
         printf("Total time consumed by signature generation is: %d seconds generation speed: %.1f MB/s\n", total_time, (float)file_size / total_time / 1024 / 1024);
     }
+
+    return true;
 }
 
 bool file_exists(string file_path) {
