@@ -57,7 +57,7 @@ typedef vector<signature_element> signatures_vector_t;
 int int_log2(int index);
 string stringify_md4_checksumm(unsigned char* md4_checksumm, int md4_truncation_length);
 int rs_int_len(long long int val);
-void generate_delta(string signature_path, string file_path, string delta_path);
+bool generate_delta(string signature_path, string file_path, string delta_path);
 bool generate_signature(string input_file_path, string signature_path);
 bool file_exists(string file_path);
 int write_int_bigendian(int file_handle, int32_t integer_value);
@@ -97,8 +97,12 @@ int main(int argc, char *argv[]) {
             exit(1);
         }
 
-        generate_delta(argv[2], argv[3], argv[4]);
-        exit(1);
+        if (generate_delta(argv[2], argv[3], argv[4])) {
+            exit(0);
+        } else {
+            exit(1);
+        }
+
     } else if (strcmp(argv[1], "patch") == 0) {
 	printf("patching is not realized yet");
 	exit(1);
@@ -207,7 +211,7 @@ bool file_exists(string file_path) {
     }
 }
 
-void generate_delta(string signature_path, string file_path, string delta_path) {
+bool generate_delta(string signature_path, string file_path, string delta_path) {
     int file_handle = open(file_path.c_str(), O_RDONLY);
 
     time_t start_time = time(NULL);
@@ -215,25 +219,25 @@ void generate_delta(string signature_path, string file_path, string delta_path) 
 
     if (file_handle <= 0) {
         std::cout<<"Can't open signature file"<<endl;
-        return;
+        return false;
     }
 
     if (file_exists(delta_path)) {
         std::cout<<"Delta file already exists, please check it"<<endl;
-        return;
+        return false;
     }   
 
     unsigned long long current_file_size = get_file_size(file_path.c_str());
 
     if (current_file_size % 1024*1024 != 0) {
         std::cout<<"We support only files multiples 1MB blocks"<<std::endl;
-        return;
+        return false;
     }
 
     signatures_vector_t signatures_vector;
     if (!read_signature_file(signature_path, signatures_vector)) {
         std::cout<<"Can't read signature file! Stop!"<<endl;
-        return;
+        return false;
     }
 
     signatures_map_t signatures_map;
@@ -249,7 +253,7 @@ void generate_delta(string signature_path, string file_path, string delta_path) 
     
     if (delta_file_handle <= 0) {
         std::cout<<"Can't open delta file for writing"<<endl;
-        return;
+        return false;
     }
 
     // Таким образом мы можем узнать точный размер старого файла 
@@ -321,19 +325,19 @@ void generate_delta(string signature_path, string file_path, string delta_path) 
             // проверил этот подход на тест стенде, все ок!
             if (write(delta_file_handle, &command, 1) != 1) {
                 std::cout<<"Can't write command to file"<<endl;
-                exit(1);
+                return false;
             }
 
             // В общем случае так делать нельзя, но у нас известно, что блоки по 1 миллиону байт
             // и этот размер у нас всегда 4х байтовый
             if (!write_int_bigendian(delta_file_handle, literal_len)) {
                 std::cout<<"Can't write literal len"<<endl;
-                exit(1);
+                return false;
             }
 
             if (write(delta_file_handle, buffer, block_size) != block_size) {
                 std::cout<<"Can't write literal to delta file"<<endl;
-                exit(1);
+                return false;
             }
         } else {
             // found
@@ -366,19 +370,19 @@ void generate_delta(string signature_path, string file_path, string delta_path) 
  
             if (write(delta_file_handle, &command, 1) != 1) {
                 std::cout<<"Can't write command to file"<<endl;
-                exit(1);
+                return false;
             }
 
             if (!write_64_int_bigendian(delta_file_handle, md4_offset)) {
                 std::cout<<"Can't write offset"<<endl;
-                exit(1);
+                return false;
             }
     
             // В общем случае так делать нельзя, но у нас известно, что блоки по 1 миллиону байт
             // и этот размер у нас всегда 4х байтовый
             if (!write_int_bigendian(delta_file_handle, block_size)) {
                 std::cout<<"Can't write copy len"<<endl;
-                exit(1);
+                return false;
             }
         }
 
@@ -389,7 +393,7 @@ void generate_delta(string signature_path, string file_path, string delta_path) 
     uint32_t zero_integer = 0;
     if (write(delta_file_handle, &zero_integer, 1) != 1) {
         std::cout<<"Can't wrote finish byte"<<endl;
-        return;
+        return false;
     }
 
     time_t finish_time = time(NULL);
@@ -398,6 +402,8 @@ void generate_delta(string signature_path, string file_path, string delta_path) 
     if (total_time > 0) {
         printf("Total time consumed by delta generation is: %d seconds generation speed: %.1f MB/s\n", total_time, (float)file_size / total_time / 1024 / 1024);
     } 
+
+    return true;
 }
 
 // TODO: валидатор кривой, не сверяет размер толком, в случае если файл удлиннился ничего не сработает нормально
