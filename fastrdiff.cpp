@@ -314,7 +314,7 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
             // Тут у нас получается: 0x41 + 2 = 0x43
             int32_t command = 0x41 + int_log2(literal_len_len);
 
-            printf("literal command: %x\n", command);
+            //printf("literal command: %x\n", command);
 
             // Тут у therealmik странность, зачем 1 байт преобразовыввать в big endian? Он же не изменится :)
             // Учитывая, что у нас little endian, то все значащие данные у нас в самом начале 4х байтового целого
@@ -362,7 +362,7 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
             // Тут у нас получается: 0x45 + 3 * 4 + 2 = 0x53 
             int32_t command = 0x45 + int_log2(offset_length) * 4 + int_log2(length_length);
            
-            printf("copy command: %x\n", command);
+            //printf("copy command: %x\n", command);
  
             if (write(delta_file_handle, &command, 1) != 1) {
                 std::cout<<"Can't write command to file"<<endl;
