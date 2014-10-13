@@ -73,7 +73,7 @@ bool read_signature_file(string signature_file, vector<signature_element>& signa
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-	printf("Please specify opertion type: signature, delta or patch");
+	printf("Please specify opertion type: signature, delta or patch\n");
 	exit (1);
     }
 
