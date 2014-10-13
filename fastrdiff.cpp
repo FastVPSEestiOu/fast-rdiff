@@ -307,7 +307,11 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
             int literal_len_len = rs_int_len(literal_len);
             // в общем-то этот параметр тоже можно зафиксировать и не дергать функцию
             // int32_t literal_len_len = 4;
+
+            // Тут у нас получается: 0x41 + 2 = 0x43
             int32_t command = 0x41 + int_log2(literal_len_len);
+
+            printf("literal command: %x\n", command);
 
             // Тут у therealmik странность, зачем 1 байт преобразовыввать в big endian? Он же не изменится :)
             // Учитывая, что у нас little endian, то все значащие данные у нас в самом начале 4х байтового целого
@@ -319,7 +323,7 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
 
             // В общем случае так делать нельзя, но у нас известно, что блоки по 1 миллиону байт
             // и этот размер у нас всегда 4х байтовый
-            if (!write_int_bigendian(delta_file_handle, literal_len_len)) {
+            if (!write_int_bigendian(delta_file_handle, literal_len)) {
                 std::cout<<"Can't write literal len"<<endl;
                 exit(1);
             }
@@ -352,22 +356,25 @@ void generate_delta(string file_path, string signature_path, string delta_path) 
             int offset_length = 8; // Упростим код и будем рассматривать все смещения как 8 байтовые и всего делов
             int length_length = rs_int_len(block_size);
 
+            // Тут у нас получается: 0x45 + 3 * 4 + 2 = 0x53 
             int32_t command = 0x45 + int_log2(offset_length) * 4 + int_log2(length_length);
-            
+           
+            printf("copy command: %x\n", command);
+ 
             if (write(delta_file_handle, &command, 1) != 1) {
                 std::cout<<"Can't write command to file"<<endl;
                 exit(1);
             }
 
             if (!write_64_int_bigendian(delta_file_handle, md4_offset)) {
-                std::cout<<"Can't write command t"<<endl;
+                std::cout<<"Can't write offset"<<endl;
                 exit(1);
             }
     
-            // В общем случае так делать нельзя, но у нас известно, что файлы по 1 миллиону байт
+            // В общем случае так делать нельзя, но у нас известно, что блоки по 1 миллиону байт
             // и этот размер у нас всегда 4х байтовый
-            if (!write_int_bigendian(delta_file_handle, length_length)) {
-                std::cout<<"Can't write literal len"<<endl;
+            if (!write_int_bigendian(delta_file_handle, block_size)) {
+                std::cout<<"Can't write copy len"<<endl;
                 exit(1);
             }
         }
