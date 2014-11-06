@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>  
 #include <vector>
 #include <map>
 #include <utility>
@@ -14,6 +15,7 @@
 #include <math.h>
 
 #include <openssl/md4.h>
+#include <openssl/md5.h>
 
 using namespace std;
 
@@ -278,7 +280,16 @@ bool generate_delta(string signature_path, string file_path, string delta_path) 
 
     // Add DELTA signature
     write_int_bigendian(delta_file_handle, RS_DELTA_MAGIC);
- 
+
+    // For calculation MD5 for whole file
+    static unsigned char md5_16byte_buffer[16];
+    MD5_CTX md5_context;
+
+    if (!MD5_Init(&md5_context)) {
+        std::cout<<"Can't init md5 context"<<endl;
+        return false;
+    }
+
     while (true) {
         int readed_bytes = read(file_handle, buffer, block_size);
 
@@ -288,6 +299,11 @@ bool generate_delta(string signature_path, string file_path, string delta_path) 
 
         if (!strong_md4_checksumm(buffer, readed_bytes, md4_checksumm_buffer, 8)) {
             std::cout<<"Can't calculate md4 cheksumm"<<endl;
+            return false;
+        }
+
+        if (!MD5_Update(&md5_context, buffer, readed_bytes)) {
+            std::cout<<"Can't update md5 checksumm"<<endl;
             return false;
         }
 
@@ -385,12 +401,26 @@ bool generate_delta(string signature_path, string file_path, string delta_path) 
         current_offset += block_size; 
     }
 
+    // Finish md5 calculation for whole file 
+    if (!MD5_Final(md5_16byte_buffer, &md5_context)) {
+        std::cout<<"Can't finish md5 calculation"<<endl;
+        return false;
+    }
+
+    string md5_whole_file_as_string = stringify_md4_checksumm(md5_16byte_buffer, 16);
+
     // Write finish byte!
     uint32_t zero_integer = 0;
     if (write(delta_file_handle, &zero_integer, 1) != 1) {
         std::cout<<"Can't wrote finish byte"<<endl;
         return false;
     }
+
+    // Print whole file checksumm into file
+    string md5_whole_file_file_name = delta_path + ".md5";
+    std::ofstream md5_out_file(md5_whole_file_file_name.c_str());
+    md5_out_file<<md5_whole_file_as_string<<"\n";
+    md5_out_file.close();
 
     time_t finish_time = time(NULL);
     int total_time = finish_time - start_time;
@@ -568,7 +598,7 @@ bool read_signature_file(string file_path, signature_file_t& signature_struct) {
 }
 
 string stringify_md4_checksumm(unsigned char* md4_checksumm, int md4_truncation_length) {
-    // THIS CAN KILL THREADFUL APPICATION!!!
+    // THIS CAN KILL APPLICAION BECAUSE THIS CODE IS NOT THREAD SAFE
     static char output[32];
 
     hexlify((char*)md4_checksumm, md4_truncation_length, output);
