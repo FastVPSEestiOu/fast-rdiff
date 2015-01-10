@@ -17,7 +17,15 @@
 #include <openssl/md4.h>
 #include <openssl/md5.h>
 
-using namespace std;
+// log4cpp logging facility
+#include "log4cpp/Category.hh"
+#include "log4cpp/Appender.hh"
+#include "log4cpp/FileAppender.hh"
+#include "log4cpp/OstreamAppender.hh"
+#include "log4cpp/Layout.hh"
+#include "log4cpp/BasicLayout.hh"
+#include "log4cpp/PatternLayout.hh"
+#include "log4cpp/Priority.hh"
 
 /* rdiff signatures */
 int32_t RS_SIG_MAGIC = 0x72730136;
@@ -43,7 +51,7 @@ typedef struct signature_element {
 
 /* Structure which describe signature file */
 typedef std::map<std::string, unsigned long long> signatures_map_t;
-typedef vector<signature_element> signatures_vector_t;
+typedef std::vector<signature_element> signatures_vector_t;
 
 typedef struct signature_file_t {
     signatures_map_t    signatures_map;
@@ -55,16 +63,16 @@ typedef struct signature_file_t {
 /* Prototypes */
 
 /* High level functions */
-bool generate_delta(string signature_path, string file_path, string delta_path);
-bool generate_signature(string input_file_path, string signature_path, uint32_t block_size);
-bool read_signature_file(string signature_file, signature_file_t& signature_struct);
+bool generate_delta(std::string signature_path, std::string file_path, std::string delta_path);
+bool generate_signature(std::string input_file_path, std::string signature_path, uint32_t block_size);
+bool read_signature_file(std::string signature_file, signature_file_t& signature_struct);
 //void validate_file(string file_path, string signature_path);
 
 /* Data conversion functions */
 int read_int(int file_handle, int32_t* int_ptr);
 int write_int_bigendian(int file_handle, int32_t integer_value);
 int write_64_int_bigendian(int file_handle, long long int integer_value);
-string stringify_md4_checksumm(unsigned char* md4_checksumm, int md4_truncation_length);
+std::string stringify_md4_checksumm(unsigned char* md4_checksumm, int md4_truncation_length);
 void hexlify(const char* in, unsigned int size, char* out);
 
 /* Checksumm functions*/
@@ -74,21 +82,39 @@ int strong_md4_checksumm(void const *p, int len, unsigned char* md4_digest, unsi
 /* Other functions */
 int int_log2(int index);
 int rs_int_len(long long int val);
-bool file_exists(string file_path);
+bool file_exists(std::string file_path);
 long long unsigned int get_file_size(const char* file_name);
+
+bool we_print_to_stdout = true;
+std::string log_file_path = "/tmp/fastrdiff.log";
+log4cpp::Category& logger = log4cpp::Category::getRoot();
+
+void init_logging() {
+    log4cpp::PatternLayout* layout = new log4cpp::PatternLayout(); 
+    layout->setConversionPattern ("%d [%p] %m%n"); 
+
+    log4cpp::Appender *appender = new log4cpp::FileAppender("default", log_file_path);
+    appender->setLayout(layout);
+
+    logger.setPriority(log4cpp::Priority::INFO);
+    logger.addAppender(appender);
+    logger.info("Logger initialized!");
+}
 
 int main(int argc, char *argv[]) {
     uint32_t block_size = 1024 * 1024;
 
+    init_logging();
+
     if (argc < 2) {
-	printf("Please specify opertion type: signature, delta or patch\n");
+	logger<<log4cpp::Priority::INFO<<("Please specify opertion type: signature, delta or patch\n");
 
         return 1;
     }
 
     if (strcmp(argv[1], "signature") == 0) {
         if (argc < 4) { 
-            printf("Please specify source file and path to signature file\n");
+            logger<<log4cpp::Priority::INFO<<("Please specify source file and path to signature file\n");
             return 1;
         }
 
@@ -99,14 +125,14 @@ int main(int argc, char *argv[]) {
         }
     } else if (strcmp(argv[1], "validate") == 0) {
         if (argc < 4) {
-            printf("Please specify source file and path to signature file\n");
+            logger<<log4cpp::Priority::INFO<<("Please specify source file and path to signature file\n");
             return 1;
         }
 
 	//validate_file(argv[2], argv[3]);
     } else if (strcmp(argv[1], "delta") == 0) {
         if (argc < 4) {
-            printf("Please specify: signature file, new file and delta file paths\n");
+            logger<<log4cpp::Priority::INFO<<("Please specify: signature file, new file and delta file paths\n");
             return 1;
         }
 
@@ -117,10 +143,10 @@ int main(int argc, char *argv[]) {
         }
 
     } else if (strcmp(argv[1], "patch") == 0) {
-	printf("patching is not realized yet");
+	logger<<log4cpp::Priority::INFO<<("patching is not realized yet");
 	return 1;
     } else {
-	printf("Not supported operation: %s\n", argv[1]);
+	logger<<log4cpp::Priority::INFO<<"Not supported operation: "<<argv[1];
 	return 1;
     }
 
@@ -128,26 +154,26 @@ int main(int argc, char *argv[]) {
 }
 
 /* Generate signature for specified file */
-bool generate_signature(string input_file_path, string signature_path, uint32_t block_size) {
+bool generate_signature(std::string input_file_path, std::string signature_path, uint32_t block_size) {
     time_t start_time = time(NULL);
     int input_file_handle = open(input_file_path.c_str(), O_RDONLY);
 
     if (input_file_handle <= 0) {
-	std::cout<<"Can't open input file"<<endl;
+	logger<<log4cpp::Priority::INFO<<("Can't open input file\n");
 	return false;
     }
 
     unsigned long long file_size = get_file_size(input_file_path.c_str());
 
     if (file_exists(signature_path)) {
-	std::cout<<"Signature file already exists, please remove it or change name"<<endl;
+	logger<<log4cpp::Priority::INFO<<("Signature file already exists, please remove it or change name\n");
 	return false;
     }
 
     int signature_file_handle = open(signature_path.c_str(), O_WRONLY|O_CREAT, S_IRUSR|S_IWUSR);
 
     if (signature_file_handle <= 0) {
-	std::cout<<"Can't open signature file wor writing"<<endl;
+	logger<<log4cpp::Priority::INFO<<("Can't open signature file wor writing");
 	return false;
     }
 
@@ -155,17 +181,17 @@ bool generate_signature(string input_file_path, string signature_path, uint32_t 
     uint32_t md4_truncation = 8;
 
     if (!write_int_bigendian(signature_file_handle, RS_SIG_MAGIC)) {
-	std::cout<<"Can't write signature header to signature file"<<endl;
+	logger<<log4cpp::Priority::INFO<<("Can't write signature header to signature file");
 	return false;
     }
 
     if (!write_int_bigendian(signature_file_handle, block_size)) {
-	std::cout<<"Can't write block size to signature file"<<endl;
+	logger<<log4cpp::Priority::INFO<<("Can't write block size to signature file");
 	return false;
     }	
     
     if (!write_int_bigendian(signature_file_handle, md4_truncation)) {
-	std::cout<<"Can't write md4 truncation to signature file"<<endl;
+	logger<<log4cpp::Priority::INFO<<("Can't write md4 truncation to signature file\n");
 	return false;
     }
 
@@ -182,17 +208,17 @@ bool generate_signature(string input_file_path, string signature_path, uint32_t 
 	unsigned int weak_checksumm = rs_calc_weak_sum(buffer, readed_bytes);
   
 	if (!write_int_bigendian(signature_file_handle, weak_checksumm)) {
-	    std::cout<<"Can't write weak checksumm to file"<<endl;
+	    logger<<log4cpp::Priority::INFO<<("Can't write weak checksumm to file\n");
 	    return false;
 	}
  
 	if (!strong_md4_checksumm(buffer, readed_bytes, md4_checksumm_buffer, md4_truncation)) {
-	    std::cout<<"Can't generate md4 checksumm"<<endl;
+	    logger<<log4cpp::Priority::INFO<<("Can't generate md4 checksumm\n");
 	    return false;
 	}
 
 	if (write(signature_file_handle, md4_checksumm_buffer, md4_truncation) != 8) {
-	    std::cout<<"Can't write md4 checksumm to signature file"<<endl;
+	    logger<<log4cpp::Priority::INFO<<("Can't write md4 checksumm to signature file");
 	    return false;
 	}
     } 
@@ -208,13 +234,16 @@ bool generate_signature(string input_file_path, string signature_path, uint32_t 
     int total_time = finish_time - start_time;
 
     if (total_time > 0) {
-        printf("Total time consumed by signature generation is: %d seconds generation speed: %.1f MB/s\n", total_time, (float)file_size / total_time / 1024 / 1024);
+        char buffer[256];
+    
+        sprintf(buffer, "Total time consumed by signature generation is: %d seconds generation speed: %.1f MB/s\n", total_time, (float)file_size / total_time / 1024 / 1024);
+        logger<<log4cpp::Priority::INFO<<(buffer);
     }
 
     return true;
 }
 
-bool file_exists(string file_path) {
+bool file_exists(std::string file_path) {
     struct stat st;
     int result = stat(file_path.c_str(), &st);
     
@@ -225,7 +254,7 @@ bool file_exists(string file_path) {
     }
 }
 
-bool generate_delta(string signature_path, string file_path, string delta_path) {
+bool generate_delta(std::string signature_path, std::string file_path, std::string delta_path) {
     signature_file_t signature_data;
 
     int file_handle = open(file_path.c_str(), O_RDONLY);
@@ -234,31 +263,48 @@ bool generate_delta(string signature_path, string file_path, string delta_path) 
     unsigned long long file_size = get_file_size(file_path.c_str());
 
     if (file_handle <= 0) {
-        std::cout<<"Can't open signature file"<<endl;
+        logger<<log4cpp::Priority::INFO<<("Can't open signature file\n");
         return false;
     }
 
-    if (file_exists(delta_path)) {
-        std::cout<<"Delta file already exists, please check it"<<endl;
-        return false;
-    }   
+    bool we_use_stdout_as_delta_output = false;
+
+    // We use pseudo file name "-" as "stdout"
+    if (delta_path.compare("-") == 0 or delta_path.compare("/dev/stdout") == 0) {
+        // Replace fake file name by real
+        delta_path = "/dev/stdout";
+        we_use_stdout_as_delta_output = true;
+            
+        // Switch log output to log instead stdout
+        we_print_to_stdout = false;
+    }
+
+    if (we_use_stdout_as_delta_output) {
+        // We do not check existence of stdout file
+    } else {
+        if (file_exists(delta_path)) {
+            logger<<log4cpp::Priority::INFO<<("Delta file already exists, please check it\n");
+            return false;
+        }   
+    }
 
     unsigned long long current_file_size = get_file_size(file_path.c_str());
 
     if (current_file_size % 1024*1024 != 0) {
-        std::cout<<"We support only files multiples 1MB blocks"<<std::endl;
+        logger<<log4cpp::Priority::INFO<<("We support only files multiples 1MB blocks\n");
+
         return false;
     }
 
     if (!read_signature_file(signature_path, signature_data)) {
-        std::cout<<"Can't read signature file! Stop!"<<endl;
+        logger<<log4cpp::Priority::INFO<<("Can't read signature file! Stop!");
         return false;
     }
 
     int delta_file_handle = open(delta_path.c_str(), O_WRONLY|O_CREAT, S_IRUSR|S_IWUSR);
     
     if (delta_file_handle <= 0) {
-        std::cout<<"Can't open delta file for writing"<<endl;
+        logger<<log4cpp::Priority::INFO<<("Can't open delta file for writing");
         return false;
     }
 
@@ -266,11 +312,11 @@ bool generate_delta(string signature_path, string file_path, string delta_path) 
     unsigned long long old_file_size = 1024 * 1024 * signature_data.signatures_map.size();
 
     if (current_file_size == old_file_size) {
-        cout<<"File size is not changed"<<endl;
+        logger<<log4cpp::Priority::INFO<<("File size is not changed");
     } else if (current_file_size > old_file_size) {
-        cout<<"New file has increased size"<<endl;
+        logger<<log4cpp::Priority::INFO<<("New file has increased size");
     } else {
-        cout<<"New file was shrinked"<<endl;
+        logger<<log4cpp::Priority::INFO<<("New file was shrinked");
     }
 
     unsigned int block_size = signature_data.block_size;  
@@ -286,7 +332,7 @@ bool generate_delta(string signature_path, string file_path, string delta_path) 
     MD5_CTX md5_context;
 
     if (!MD5_Init(&md5_context)) {
-        std::cout<<"Can't init md5 context"<<endl;
+        logger<<log4cpp::Priority::INFO<<("Can't init md5 context");
         return false;
     }
 
@@ -298,17 +344,17 @@ bool generate_delta(string signature_path, string file_path, string delta_path) 
         }
 
         if (!strong_md4_checksumm(buffer, readed_bytes, md4_checksumm_buffer, 8)) {
-            std::cout<<"Can't calculate md4 cheksumm"<<endl;
+            logger<<log4cpp::Priority::INFO<<("Can't calculate md4 cheksumm");
             return false;
         }
 
         if (!MD5_Update(&md5_context, buffer, readed_bytes)) {
-            std::cout<<"Can't update md5 checksumm"<<endl;
+            logger<<log4cpp::Priority::INFO<<("Can't update md5 checksumm");
             return false;
         }
 
         // construct key
-        string md4_as_string = stringify_md4_checksumm(md4_checksumm_buffer, 8);
+        std::string md4_as_string = stringify_md4_checksumm(md4_checksumm_buffer, 8);
 
         // try to find it in signature
         //print_md4_summ(md4_as_string, 8);
@@ -338,19 +384,19 @@ bool generate_delta(string signature_path, string file_path, string delta_path) 
             // Учитывая, что у нас little endian, то все значащие данные у нас в самом начале 4х байтового целого
             // проверил этот подход на тест стенде, все ок!
             if (write(delta_file_handle, &command, 1) != 1) {
-                std::cout<<"Can't write command to file"<<endl;
+                logger<<log4cpp::Priority::INFO<<("Can't write command to file");
                 return false;
             }
 
             // В общем случае так делать нельзя, но у нас известно, что блоки по 1 миллиону байт
             // и этот размер у нас всегда 4х байтовый
             if (!write_int_bigendian(delta_file_handle, literal_len)) {
-                std::cout<<"Can't write literal len"<<endl;
+                logger<<log4cpp::Priority::INFO<<("Can't write literal len");
                 return false;
             }
 
             if (write(delta_file_handle, buffer, block_size) != block_size) {
-                std::cout<<"Can't write literal to delta file"<<endl;
+                logger<<log4cpp::Priority::INFO<<("Can't write literal to delta file");
                 return false;
             }
         } else {
@@ -381,19 +427,19 @@ bool generate_delta(string signature_path, string file_path, string delta_path) 
             //printf("copy command: %x\n", command);
  
             if (write(delta_file_handle, &command, 1) != 1) {
-                std::cout<<"Can't write command to file"<<endl;
+                logger<<log4cpp::Priority::INFO<<("Can't write command to file");
                 return false;
             }
 
             if (!write_64_int_bigendian(delta_file_handle, md4_offset)) {
-                std::cout<<"Can't write offset"<<endl;
+                logger<<log4cpp::Priority::INFO<<("Can't write offset");
                 return false;
             }
     
             // В общем случае так делать нельзя, но у нас известно, что блоки по 1 миллиону байт
             // и этот размер у нас всегда 4х байтовый
             if (!write_int_bigendian(delta_file_handle, block_size)) {
-                std::cout<<"Can't write copy len"<<endl;
+                logger<<log4cpp::Priority::INFO<<("Can't write copy len");
                 return false;
             }
         }
@@ -403,21 +449,21 @@ bool generate_delta(string signature_path, string file_path, string delta_path) 
 
     // Finish md5 calculation for whole file 
     if (!MD5_Final(md5_16byte_buffer, &md5_context)) {
-        std::cout<<"Can't finish md5 calculation"<<endl;
+        logger<<log4cpp::Priority::INFO<<("Can't finish md5 calculation");
         return false;
     }
 
-    string md5_whole_file_as_string = stringify_md4_checksumm(md5_16byte_buffer, 16);
+    std::string md5_whole_file_as_string = stringify_md4_checksumm(md5_16byte_buffer, 16);
 
     // Write finish byte!
     uint32_t zero_integer = 0;
     if (write(delta_file_handle, &zero_integer, 1) != 1) {
-        std::cout<<"Can't wrote finish byte"<<endl;
+        logger<<log4cpp::Priority::INFO<<("Can't wrote finish byte");
         return false;
     }
 
     // Print whole file checksumm into file
-    string md5_whole_file_file_name = delta_path + ".md5";
+    std::string md5_whole_file_file_name = delta_path + ".md5";
     std::ofstream md5_out_file(md5_whole_file_file_name.c_str());
     md5_out_file<<md5_whole_file_as_string<<"\n";
     md5_out_file.close();
@@ -426,7 +472,10 @@ bool generate_delta(string signature_path, string file_path, string delta_path) 
     int total_time = finish_time - start_time;
 
     if (total_time > 0) {
-        printf("Total time consumed by delta generation is: %d seconds generation speed: %.1f MB/s\n", total_time, (float)file_size / total_time / 1024 / 1024);
+        char buffer[256];
+
+        sprintf(buffer, "Total time consumed by delta generation is: %d seconds generation speed: %.1f MB/s\n", total_time, (float)file_size / total_time / 1024 / 1024);
+        logger<<log4cpp::Priority::INFO<<(buffer);
     } 
 
     return true;
@@ -499,7 +548,7 @@ void validate_file(string file_path, string signature_path) {
 */
 
 // Read signature file to in memory structure
-bool read_signature_file(string file_path, signature_file_t& signature_struct) {
+bool read_signature_file(std::string file_path, signature_file_t& signature_struct) {
     unsigned long long file_size = get_file_size(file_path.c_str());
     
     int32_t file_signature_from_file = 0;
@@ -509,48 +558,49 @@ bool read_signature_file(string file_path, signature_file_t& signature_struct) {
     int file_handle = open(file_path.c_str(), O_RDONLY);
 
     if (file_handle <= 0) {
-	std::cout<<"Can't open signature file"<<endl;
+	logger<<log4cpp::Priority::INFO<<("Can't open signature file");
 	return false;	
     } 
 
     if (!read_int(file_handle, &file_signature_from_file)) {
-        std::cout<<"Can't read file signature"<<endl;
+        logger<<log4cpp::Priority::INFO<<("Can't read file signature");
         return false;
     }
 
     if (file_signature_from_file != RS_SIG_MAGIC) {
-	std::cout<<"Can't find signature magic number"<<endl;
+	logger<<log4cpp::Priority::INFO<<("Can't find signature magic number");
 	return false;
     }
 
     if (!read_int(file_handle, &blocksize_from_file)) {
-        std::cout<<"Can't read block size from file"<<endl;
+        logger<<log4cpp::Priority::INFO<<("Can't read block size from file");
         return false;
     }
 
     if (blocksize_from_file > 0 && blocksize_from_file % 2 == 0) {
-	cout<<"We read block size:"<<blocksize_from_file<<endl;	
+	logger<<log4cpp::Priority::INFO<<"We read block size:"<<blocksize_from_file;
     } else {
-	std::cout<<"Block size readed from signature is broken because it's null or it's not an pow of 2: "<<blocksize_from_file<<endl;
+	logger<<log4cpp::Priority::INFO<<"Block size readed from signature is broken because it's null or it's not an pow of 2: "<<blocksize_from_file;
+
 	return false;
     }
 
     if (!read_int(file_handle, &md4_truncation_from_file)) {
-        std::cout<<"Can't read md4 truncation from file"<<endl;
+        logger<<log4cpp::Priority::INFO<<("Can't read md4 truncation from file");
         return false;
     }
 
     if (md4_truncation_from_file < 1 or md4_truncation_from_file > 16) {
-	cout<<"Truncation is: "<<md4_truncation_from_file<<endl;
+	logger<<log4cpp::Priority::INFO<<"Truncation is: "<<md4_truncation_from_file;
 	return false;
     }
 
     if (md4_truncation_from_file != 8) {
-	cout<<"We support only 8 byte md4 truncation! Sorry :("<<endl;
+	logger<<log4cpp::Priority::INFO<<("We support only 8 byte md4 truncation! Sorry :(");
 	return false;
     }
 
-    cout<<"Truncation for md4 is: "<<md4_truncation_from_file<<endl;
+    logger<<log4cpp::Priority::INFO<<"Truncation for md4 is: "<<md4_truncation_from_file;
  
     signature_struct.hash_type = 0x7777; /* md4 */
     signature_struct.hash_truncation = md4_truncation_from_file;
@@ -563,7 +613,7 @@ bool read_signature_file(string file_path, signature_file_t& signature_struct) {
     // Вычетаем размер хидера и делим на размер одной сигнатуры 
     unsigned long long signatures_count = int ( (file_size - sizeof(uint32_t) * 3) / (sizeof(uint32_t) + md4_truncation_from_file));
 
-    std::cout<<"We calculated approximate signatures number as: "<<signatures_count<<endl;
+    logger<<log4cpp::Priority::INFO<<"We calculated approximate signatures number as: "<<signatures_count;
 
     long long unsigned int offset = 0;
     while (true) {
@@ -588,7 +638,7 @@ bool read_signature_file(string file_path, signature_file_t& signature_struct) {
 	printf("\n");
 	*/
 
-        string md4_as_string = stringify_md4_checksumm(md4_checksumm_buffer, md4_truncation_from_file);
+        std::string md4_as_string = stringify_md4_checksumm(md4_checksumm_buffer, md4_truncation_from_file);
         signature_struct.signatures_map[ md4_as_string ] = offset;
 
 	offset += blocksize_from_file; 
@@ -597,7 +647,7 @@ bool read_signature_file(string file_path, signature_file_t& signature_struct) {
     return true;
 }
 
-string stringify_md4_checksumm(unsigned char* md4_checksumm, int md4_truncation_length) {
+std::string stringify_md4_checksumm(unsigned char* md4_checksumm, int md4_truncation_length) {
     // THIS CAN KILL APPLICAION BECAUSE THIS CODE IS NOT THREAD SAFE
     static char output[32];
 
@@ -745,7 +795,7 @@ int rs_int_len(long long int val) {
     } else if (!(val & ~(long long int)0xffffffffffffffff)) {
         return 8;
     } else {
-        std::cout<<"Can't encode integer"<<endl;
+        logger<<log4cpp::Priority::INFO<<("Can't encode integer");
         exit(1);
     }
 }
