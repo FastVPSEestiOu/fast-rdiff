@@ -72,11 +72,14 @@ bool read_signature_file(std::string signature_file, signature_file_t& signature
 int read_int(int file_handle, int32_t* int_ptr);
 int write_int_bigendian(int file_handle, int32_t integer_value);
 int write_64_int_bigendian(int file_handle, long long int integer_value);
-std::string stringify_md4_checksumm(unsigned char* md4_checksumm, int md4_truncation_length);
-void hexlify(const char* in, unsigned int size, char* out);
 
 /* Wrapper function for transparent md5 calculation for delta file */
 ssize_t write_wrapper(int fd, const void *buf, size_t count);
+int write_int_bigendian_wrapper(int file_handle, int32_t integer_value);
+int write_64_int_bigendian_wrapper(int file_handle, long long int integer_value);
+
+std::string stringify_mdx_checksumm(unsigned char* md4_checksumm, int md4_truncation_length);
+void hexlify(const char* in, unsigned int size, char* out);
 
 /* Checksumm functions*/
 unsigned int rs_calc_weak_sum(void const *p, int len);
@@ -92,8 +95,16 @@ bool we_print_to_stdout = true;
 std::string log_file_path = "/tmp/fastrdiff.log";
 log4cpp::Category& logger = log4cpp::Category::getRoot();
 
+// For calculation MD5 of delta file
+MD5_CTX md5_context_delta_file;
+
 /* Wrap write function for simple handling all output data */
 ssize_t write_wrapper(int fd, const void *buf, size_t count) {
+    if (!MD5_Update(&md5_context_delta_file, buf, count)) {
+        logger<<log4cpp::Priority::INFO<<"Can't calculate md5 for delta file in write handler" ;
+        // Yes, it's so bad but not an critical
+    }
+
     return write(fd, buf, count);
 }
 
@@ -225,7 +236,7 @@ bool generate_signature(std::string input_file_path, std::string signature_path,
 	    return false;
 	}
 
-	if (write_wrapper(signature_file_handle, md4_checksumm_buffer, md4_truncation) != 8) {
+	if (write(signature_file_handle, md4_checksumm_buffer, md4_truncation) != 8) {
 	    logger<<log4cpp::Priority::INFO<<("Can't write md4 checksumm to signature file");
 	    return false;
 	}
@@ -332,16 +343,10 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
     unsigned long long int current_offset = 0; 
     unsigned char md4_checksumm_buffer[8];
 
-    // Add DELTA signature
-    write_int_bigendian(delta_file_handle, RS_DELTA_MAGIC);
+    // After any write operation we should init cheksumm handles!
 
     // For calculation MD5 for whole file
-    static unsigned char md5_16byte_buffer[16];
     MD5_CTX md5_context_whole_source_file;
-
-    // For calculation MD5 of delta file
-    static unsigned char md5_16byte_buffer_delta_signature[16];
-    MD5_CTX md5_context_delta_file;
 
     if (!MD5_Init(&md5_context_whole_source_file)) {
         logger<<log4cpp::Priority::INFO<<"Can't init md5 context for whole file";
@@ -353,6 +358,8 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
         return false;
     }
 
+    // Add DELTA signature
+    write_int_bigendian(delta_file_handle, RS_DELTA_MAGIC);
 
     while (true) {
         int readed_bytes = read(file_handle, buffer, block_size);
@@ -372,7 +379,7 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
         }
 
         // construct key
-        std::string md4_as_string = stringify_md4_checksumm(md4_checksumm_buffer, 8);
+        std::string md4_as_string = stringify_mdx_checksumm(md4_checksumm_buffer, 8);
 
         // try to find it in signature
         //print_md4_summ(md4_as_string, 8);
@@ -408,7 +415,7 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
 
             // В общем случае так делать нельзя, но у нас известно, что блоки по 1 миллиону байт
             // и этот размер у нас всегда 4х байтовый
-            if (!write_int_bigendian(delta_file_handle, literal_len)) {
+            if (!write_int_bigendian_wrapper(delta_file_handle, literal_len)) {
                 logger<<log4cpp::Priority::INFO<<("Can't write literal len");
                 return false;
             }
@@ -449,7 +456,7 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
                 return false;
             }
 
-            if (!write_64_int_bigendian(delta_file_handle, md4_offset)) {
+            if (!write_64_int_bigendian_wrapper(delta_file_handle, md4_offset)) {
                 logger<<log4cpp::Priority::INFO<<("Can't write offset");
                 return false;
             }
@@ -465,13 +472,17 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
         current_offset += block_size; 
     }
 
+    unsigned char md5_16byte_buffer_source_file[16];
+
     // Finish md5 calculation for whole file 
-    if (!MD5_Final(md5_16byte_buffer, &md5_context_whole_source_file)) {
-        logger<<log4cpp::Priority::INFO<<("Can't finish md5 calculation");
+    if (!MD5_Final(md5_16byte_buffer_source_file, &md5_context_whole_source_file)) {
+        logger<<log4cpp::Priority::INFO<<"Can't finish md5 calculation for source file";
         return false;
     }
 
-    std::string md5_whole_file_as_string = stringify_md4_checksumm(md5_16byte_buffer, 16);
+    std::string md5_whole_file_as_string = stringify_mdx_checksumm(md5_16byte_buffer_source_file, 16);
+    logger<<log4cpp::Priority::INFO<<"We calculated source file checksumm as: "<<md5_whole_file_as_string;
+
 
     // Write finish byte!
     uint32_t zero_integer = 0;
@@ -480,11 +491,28 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
         return false;
     }
 
+    unsigned char md5_16byte_buffer_delta_signature[16];
+
+    // Got checksumm for whole delta file
+    if (!MD5_Final(md5_16byte_buffer_delta_signature, &md5_context_delta_file)) {
+        logger<<log4cpp::Priority::INFO<<"Can't finish md5 calculation for delta";
+        return false;
+    }
+
+    std::string md5_delta_file_as_string = stringify_mdx_checksumm(md5_16byte_buffer_delta_signature, 16);
+    logger<<log4cpp::Priority::INFO<<"We calculated delta file cheksumm as: "<<md5_delta_file_as_string;
+
     // Print whole file checksumm into file
     std::string md5_whole_file_file_name = delta_path + ".md5";
+
     std::ofstream md5_out_file(md5_whole_file_file_name.c_str());
-    md5_out_file<<md5_whole_file_as_string<<"\n";
-    md5_out_file.close();
+    
+    if (md5_out_file.is_open()) {
+        md5_out_file<<md5_whole_file_as_string<<"\n";
+        md5_out_file.close();
+    } else {
+        logger<<log4cpp::Priority::ERROR<<"Can't open file for writing md5 of whole file";
+    }
 
     time_t finish_time = time(NULL);
     int total_time = finish_time - start_time;
@@ -541,9 +569,9 @@ void validate_file(string file_path, string signature_path) {
 		// hashes are equal!
 	    } else {
 		printf("Hashes mismatch at %lld! ", index);
-		std::cout<<stringify_md4_checksumm(md4_checksumm_buffer, 8);
+		std::cout<<stringify_mdx_checksumm(md4_checksumm_buffer, 8);
 		printf(" is not equal to ");
-		std::cout<<stringify_md4_checksumm(current_block_checksumm_data.md4_checksumm, 8);
+		std::cout<<stringify_mdx_checksumm(current_block_checksumm_data.md4_checksumm, 8);
 		printf("\n");
                 validation_success = false;
 		break;
@@ -652,11 +680,11 @@ bool read_signature_file(std::string file_path, signature_file_t& signature_stru
 	/*
 	printf("weak: %08x offset: %lld ", weak_checksumm, offset);
 	printf("md4: ");
-	std::cout<<stringify_md4_checksumm(md4_checksumm_buffer, md4_truncation_from_file);
+	std::cout<<stringify_mdx_checksumm(md4_checksumm_buffer, md4_truncation_from_file);
 	printf("\n");
 	*/
 
-        std::string md4_as_string = stringify_md4_checksumm(md4_checksumm_buffer, md4_truncation_from_file);
+        std::string md4_as_string = stringify_mdx_checksumm(md4_checksumm_buffer, md4_truncation_from_file);
         signature_struct.signatures_map[ md4_as_string ] = offset;
 
 	offset += blocksize_from_file; 
@@ -665,7 +693,7 @@ bool read_signature_file(std::string file_path, signature_file_t& signature_stru
     return true;
 }
 
-std::string stringify_md4_checksumm(unsigned char* md4_checksumm, int md4_truncation_length) {
+std::string stringify_mdx_checksumm(unsigned char* md4_checksumm, int md4_truncation_length) {
     // THIS CAN KILL APPLICAION BECAUSE THIS CODE IS NOT THREAD SAFE
     static char output[32];
 
@@ -695,7 +723,7 @@ int read_int(int file_handle, int32_t* int_ptr) {
 int write_int_bigendian(int file_handle, int32_t integer_value) {
     uint32_t encoded_integer = htobe32(integer_value);
 
-    int bytes_written = write_wrapper(file_handle, &encoded_integer, sizeof(int32_t));
+    int bytes_written = write(file_handle, &encoded_integer, sizeof(int32_t));
 
     // так как может случиться так, что мы записали меньше байт, чем пытались
     if (bytes_written == sizeof(int32_t)) {
@@ -708,7 +736,7 @@ int write_int_bigendian(int file_handle, int32_t integer_value) {
 int write_64_int_bigendian(int file_handle, long long int integer_value) {
     long long int encoded_integer = htobe64(integer_value);
 
-    int bytes_written = write_wrapper(file_handle, &encoded_integer, sizeof(long long int));
+    int bytes_written = write(file_handle, &encoded_integer, sizeof(long long int));
     
     if (bytes_written == sizeof(long long int)) {
         return true;
@@ -716,6 +744,32 @@ int write_64_int_bigendian(int file_handle, long long int integer_value) {
         return false;
     }
 }
+
+int write_int_bigendian_wrapper(int file_handle, int32_t integer_value) {
+    uint32_t encoded_integer = htobe32(integer_value);
+
+    int bytes_written = write_wrapper(file_handle, &encoded_integer, sizeof(int32_t));
+
+    // так как может случиться так, что мы записали меньше байт, чем пытались
+    if (bytes_written == sizeof(int32_t)) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+int write_64_int_bigendian_wrapper(int file_handle, long long int integer_value) {
+    long long int encoded_integer = htobe64(integer_value);
+
+    int bytes_written = write_wrapper(file_handle, &encoded_integer, sizeof(long long int));
+
+    if (bytes_written == sizeof(long long int)) {
+        return true;
+    } else {
+        return false;
+    }
+}
+
 
 // http://tau-itw.wikidot.com/saphe-implementation-common-hexlify-cpp
 // Convert to upper-case hex string
