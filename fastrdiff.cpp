@@ -368,7 +368,7 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
     }
 
     // Add DELTA signature
-    write_int_bigendian(delta_file_handle, RS_DELTA_MAGIC);
+    write_int_bigendian_wrapper(delta_file_handle, RS_DELTA_MAGIC);
 
     while (true) {
         int readed_bytes = read(file_handle, buffer, block_size);
