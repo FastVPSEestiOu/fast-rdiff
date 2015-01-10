@@ -475,7 +475,7 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
     
             // В общем случае так делать нельзя, но у нас известно, что блоки по 1 миллиону байт
             // и этот размер у нас всегда 4х байтовый
-            if (!write_int_bigendian(delta_file_handle, block_size)) {
+            if (!write_int_bigendian_wrapper(delta_file_handle, block_size)) {
                 logger<<log4cpp::Priority::INFO<<("Can't write copy len");
                 return false;
             }
