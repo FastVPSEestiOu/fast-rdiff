@@ -329,9 +329,9 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
 
     // For calculation MD5 for whole file
     static unsigned char md5_16byte_buffer[16];
-    MD5_CTX md5_context;
+    MD5_CTX md5_context_whole_source_file;
 
-    if (!MD5_Init(&md5_context)) {
+    if (!MD5_Init(&md5_context_whole_source_file)) {
         logger<<log4cpp::Priority::INFO<<("Can't init md5 context");
         return false;
     }
@@ -348,7 +348,7 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
             return false;
         }
 
-        if (!MD5_Update(&md5_context, buffer, readed_bytes)) {
+        if (!MD5_Update(&md5_context_whole_source_file, buffer, readed_bytes)) {
             logger<<log4cpp::Priority::INFO<<("Can't update md5 checksumm");
             return false;
         }
@@ -448,7 +448,7 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
     }
 
     // Finish md5 calculation for whole file 
-    if (!MD5_Final(md5_16byte_buffer, &md5_context)) {
+    if (!MD5_Final(md5_16byte_buffer, &md5_context_whole_source_file)) {
         logger<<log4cpp::Priority::INFO<<("Can't finish md5 calculation");
         return false;
     }
