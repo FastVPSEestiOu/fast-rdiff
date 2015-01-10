@@ -98,12 +98,21 @@ log4cpp::Category& logger = log4cpp::Category::getRoot();
 // For calculation MD5 of delta file
 MD5_CTX md5_context_delta_file;
 
+// For size of delta data
+long long unsigned int size_of_delta_data = 0;
+
+// For size of source data
+long long unsigned int size_of_source_data = 0;
+
 /* Wrap write function for simple handling all output data */
 ssize_t write_wrapper(int fd, const void *buf, size_t count) {
     if (!MD5_Update(&md5_context_delta_file, buf, count)) {
         logger<<log4cpp::Priority::INFO<<"Can't calculate md5 for delta file in write handler" ;
         // Yes, it's so bad but not an critical
     }
+
+    // Increment delta data size
+    size_of_delta_data += count;
 
     return write(fd, buf, count);
 }
@@ -368,6 +377,9 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
             break;
         }
 
+        // Increment data counter
+        size_of_source_data += readed_bytes;
+
         if (!strong_md4_checksumm(buffer, readed_bytes, md4_checksumm_buffer, 8)) {
             logger<<log4cpp::Priority::INFO<<("Can't calculate md4 cheksumm");
             return false;
@@ -507,10 +519,13 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
     if (env_name_for_meta_file && strlen(env_name_for_meta_file) > 0) {
         // Print whole/delta files checksumm into file
         std::ofstream meta_file(env_name_for_meta_file);
-    
+   
         if (meta_file.is_open()) {
-            meta_file<<"whole_file:"<<md5_whole_file_as_string<<"\n";
-            meta_file<<"delta_file:"<<md5_delta_file_as_string<<"\n";
+            meta_file<<"source_data_size:"<<size_of_source_data<<"\n";
+            meta_file<<"source_data_md5:"<<md5_whole_file_as_string<<"\n";
+            meta_file<<"delta_data_md5:"<<md5_delta_file_as_string<<"\n";
+            meta_file<<"delta_data_size:"<<size_of_delta_data<<"\n";
+
             meta_file.close();
         } else {
             logger<<log4cpp::Priority::ERROR<<"Can't open file for writing md5 of whole file";
