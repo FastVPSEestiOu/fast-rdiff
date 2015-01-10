@@ -75,6 +75,9 @@ int write_64_int_bigendian(int file_handle, long long int integer_value);
 std::string stringify_md4_checksumm(unsigned char* md4_checksumm, int md4_truncation_length);
 void hexlify(const char* in, unsigned int size, char* out);
 
+/* Wrapper function for transparent md5 calculation for delta file */
+ssize_t write_wrapper(int fd, const void *buf, size_t count);
+
 /* Checksumm functions*/
 unsigned int rs_calc_weak_sum(void const *p, int len);
 int strong_md4_checksumm(void const *p, int len, unsigned char* md4_digest, unsigned int truncate_length);
@@ -88,6 +91,11 @@ long long unsigned int get_file_size(const char* file_name);
 bool we_print_to_stdout = true;
 std::string log_file_path = "/tmp/fastrdiff.log";
 log4cpp::Category& logger = log4cpp::Category::getRoot();
+
+/* Wrap write function for simple handling all output data */
+ssize_t write_wrapper(int fd, const void *buf, size_t count) {
+    return write(fd, buf, count);
+}
 
 void init_logging() {
     log4cpp::PatternLayout* layout = new log4cpp::PatternLayout(); 
@@ -217,7 +225,7 @@ bool generate_signature(std::string input_file_path, std::string signature_path,
 	    return false;
 	}
 
-	if (write(signature_file_handle, md4_checksumm_buffer, md4_truncation) != 8) {
+	if (write_wrapper(signature_file_handle, md4_checksumm_buffer, md4_truncation) != 8) {
 	    logger<<log4cpp::Priority::INFO<<("Can't write md4 checksumm to signature file");
 	    return false;
 	}
@@ -331,10 +339,20 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
     static unsigned char md5_16byte_buffer[16];
     MD5_CTX md5_context_whole_source_file;
 
+    // For calculation MD5 of delta file
+    static unsigned char md5_16byte_buffer_delta_signature[16];
+    MD5_CTX md5_context_delta_file;
+
     if (!MD5_Init(&md5_context_whole_source_file)) {
-        logger<<log4cpp::Priority::INFO<<("Can't init md5 context");
+        logger<<log4cpp::Priority::INFO<<"Can't init md5 context for whole file";
         return false;
     }
+
+    if (!MD5_Init(&md5_context_delta_file)) {
+        logger<<log4cpp::Priority::INFO<<"Can't init md5 context for delta file";
+        return false;
+    }
+
 
     while (true) {
         int readed_bytes = read(file_handle, buffer, block_size);
@@ -349,7 +367,7 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
         }
 
         if (!MD5_Update(&md5_context_whole_source_file, buffer, readed_bytes)) {
-            logger<<log4cpp::Priority::INFO<<("Can't update md5 checksumm");
+            logger<<log4cpp::Priority::INFO<<"Can't update md5 checksumm for whole file";
             return false;
         }
 
@@ -383,7 +401,7 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
             // Тут у therealmik странность, зачем 1 байт преобразовыввать в big endian? Он же не изменится :)
             // Учитывая, что у нас little endian, то все значащие данные у нас в самом начале 4х байтового целого
             // проверил этот подход на тест стенде, все ок!
-            if (write(delta_file_handle, &command, 1) != 1) {
+            if (write_wrapper(delta_file_handle, &command, 1) != 1) {
                 logger<<log4cpp::Priority::INFO<<("Can't write command to file");
                 return false;
             }
@@ -395,7 +413,7 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
                 return false;
             }
 
-            if (write(delta_file_handle, buffer, block_size) != block_size) {
+            if (write_wrapper(delta_file_handle, buffer, block_size) != block_size) {
                 logger<<log4cpp::Priority::INFO<<("Can't write literal to delta file");
                 return false;
             }
@@ -426,7 +444,7 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
            
             //printf("copy command: %x\n", command);
  
-            if (write(delta_file_handle, &command, 1) != 1) {
+            if (write_wrapper(delta_file_handle, &command, 1) != 1) {
                 logger<<log4cpp::Priority::INFO<<("Can't write command to file");
                 return false;
             }
@@ -457,7 +475,7 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
 
     // Write finish byte!
     uint32_t zero_integer = 0;
-    if (write(delta_file_handle, &zero_integer, 1) != 1) {
+    if (write_wrapper(delta_file_handle, &zero_integer, 1) != 1) {
         logger<<log4cpp::Priority::INFO<<("Can't wrote finish byte");
         return false;
     }
@@ -677,7 +695,7 @@ int read_int(int file_handle, int32_t* int_ptr) {
 int write_int_bigendian(int file_handle, int32_t integer_value) {
     uint32_t encoded_integer = htobe32(integer_value);
 
-    int bytes_written = write(file_handle, &encoded_integer, sizeof(int32_t));
+    int bytes_written = write_wrapper(file_handle, &encoded_integer, sizeof(int32_t));
 
     // так как может случиться так, что мы записали меньше байт, чем пытались
     if (bytes_written == sizeof(int32_t)) {
@@ -690,7 +708,7 @@ int write_int_bigendian(int file_handle, int32_t integer_value) {
 int write_64_int_bigendian(int file_handle, long long int integer_value) {
     long long int encoded_integer = htobe64(integer_value);
 
-    int bytes_written = write(file_handle, &encoded_integer, sizeof(long long int));
+    int bytes_written = write_wrapper(file_handle, &encoded_integer, sizeof(long long int));
     
     if (bytes_written == sizeof(long long int)) {
         return true;
