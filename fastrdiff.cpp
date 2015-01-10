@@ -502,16 +502,21 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
     std::string md5_delta_file_as_string = stringify_mdx_checksumm(md5_16byte_buffer_delta_signature, 16);
     logger<<log4cpp::Priority::INFO<<"We calculated delta file cheksumm as: "<<md5_delta_file_as_string;
 
-    // Print whole file checksumm into file
-    std::string md5_whole_file_file_name = delta_path + ".md5";
+    char* env_name_for_meta_file = getenv("FASTRDIFF_META_FILE_NAME");
 
-    std::ofstream md5_out_file(md5_whole_file_file_name.c_str());
+    if (env_name_for_meta_file && strlen(env_name_for_meta_file) > 0) {
+        // Print whole/delta files checksumm into file
+        std::ofstream meta_file(env_name_for_meta_file);
     
-    if (md5_out_file.is_open()) {
-        md5_out_file<<md5_whole_file_as_string<<"\n";
-        md5_out_file.close();
+        if (meta_file.is_open()) {
+            meta_file<<"whole_file:"<<md5_whole_file_as_string<<"\n";
+            meta_file<<"delta_file:"<<md5_delta_file_as_string<<"\n";
+            meta_file.close();
+        } else {
+            logger<<log4cpp::Priority::ERROR<<"Can't open file for writing md5 of whole file";
+        }
     } else {
-        logger<<log4cpp::Priority::ERROR<<"Can't open file for writing md5 of whole file";
+        logger<<log4cpp::Priority::ERROR<<"We will not save source and delta file cheksumms because you did not pass meta path in variable FASTRDIFF_META_FILE_NAME";
     }
 
     time_t finish_time = time(NULL);
