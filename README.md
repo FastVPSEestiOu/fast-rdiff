@@ -1,6 +1,6 @@
 ### Brief 
 
-This is very fast (thanks to C++) impelemntation of rdiff algoritmh (librsync, rdiff). Actually, rdiff should not be used in production due to significant performance issues: https://github.com/librsync/librsync/issues/6
+This is very fast (thanks to C++) impelementation of rdiff algoritmh (delta difference, librsync, rdiff). Actually, rdiff should not be used in production due to significant performance issues: https://github.com/librsync/librsync/issues/6
 
 We support only delta generation and ONLY for 1MB block files (we are using fast-rdiff for OpenVZ ploop files).
 
