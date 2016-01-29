@@ -40,6 +40,12 @@ make
 
 Yes, it's very well tested. We are using it to generate and restore about 500TB of customer backups. We are using this code for last 2 year without any issues. Thanks to bundled checksumm support for all steps (for delta, for original file) we could be sure in data integrity.
 
+We tested this library with files from few MB to ~500GB in total size.
+
+### Is it really fast?
+
+Yes. On Samsung EVO 840 / 850 with modern CPU you could expect about 400-500MB/s for delta generation.
+
 ### Thanks
 
 Michael Samuel (https://github.com/therealmik/pyrdiff)
