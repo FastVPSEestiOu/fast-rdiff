@@ -4,6 +4,7 @@
 #include <map>
 #include <utility>
 
+#include <unistd.h>
 #include <stdint.h>
 #include <sys/fcntl.h>
 #include <stdio.h>
@@ -33,13 +34,11 @@ int32_t RS_DELTA_MAGIC = 0x72730236;
 
 /*
 
-1. Добавить в будущем поддержку файлов не кратных мегабайту
-2. Добавить возможность отправки дельты на stdout
-3. Хэшировать файл целиком и сохранять его сигнатуру хотя бы в лог
-4. Добавить патчер
-5. Добавить тесты (мб от librsync? Хорошая идея: make all check)
-6. Добавить парсер аргументов командной строки
-7. Сделаеть указываемый извне blocksize
+1. Add support for any file size (not only for 1MB block size)
+2. Add patch support
+3. Add tests (we could use tests from librsync)
+4. Add new command line parser
+5. Add ability to specify blocksize
 
 */
 
@@ -335,8 +334,8 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
         logger<<log4cpp::Priority::INFO<<("Can't open delta file for writing");
         return false;
     }
-
-    // Таким образом мы можем узнать примерный размер старого файла 
+   
+    // We could get old file size this way
     unsigned long long old_file_size = 1024 * 1024 * signature_data.signatures_map.size();
 
     if (current_file_size == old_file_size) {
@@ -406,27 +405,24 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
                 return command.to_bytes(1, 'big') + literal_len.to_bytes(literal_len_length, 'big') + self.data
             */
             
-            // Размер литерала у нас не меняется
+            // Literal size is fixed
             int literal_len = block_size;
             int literal_len_len = rs_int_len(literal_len);
-            // в общем-то этот параметр тоже можно зафиксировать и не дергать функцию
             // int32_t literal_len_len = 4;
 
-            // Тут у нас получается: 0x41 + 2 = 0x43
+            // And we have here: 0x41 + 2 = 0x43
             int32_t command = 0x41 + int_log2(literal_len_len);
 
             //printf("literal command: %x\n", command);
 
-            // Тут у therealmik странность, зачем 1 байт преобразовыввать в big endian? Он же не изменится :)
-            // Учитывая, что у нас little endian, то все значащие данные у нас в самом начале 4х байтового целого
-            // проверил этот подход на тест стенде, все ок!
+	    // therealmik's implementation have very strange place. Why he convert single byte to big engian?
+	    // We have only little endian data and all significant data we gave in the begin of 4byte integer
             if (write_wrapper(delta_file_handle, &command, 1) != 1) {
                 logger<<log4cpp::Priority::INFO<<("Can't write command to file");
                 return false;
             }
 
-            // В общем случае так делать нельзя, но у нас известно, что блоки по 1 миллиону байт
-            // и этот размер у нас всегда 4х байтовый
+            // We SHOULD not use this approach in common case. But we have only 1million bytes blocks and our size is 4bytes 
             if (!write_int_bigendian_wrapper(delta_file_handle, literal_len)) {
                 logger<<log4cpp::Priority::INFO<<("Can't write literal len");
                 return false;
@@ -455,10 +451,10 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
             */ 
 
             //int offset_length = rs_int_len(md4_offset);
-            int offset_length = 8; // Упростим код и будем рассматривать все смещения как 8 байтовые и всего делов
+            int offset_length = 8; // For code simplicity we are interpreting all offsets as 8 byte offsets
             int length_length = rs_int_len(block_size);
 
-            // Тут у нас получается: 0x45 + 3 * 4 + 2 = 0x53 
+            // We have here: 0x45 + 3 * 4 + 2 = 0x53 
             int32_t command = 0x45 + int_log2(offset_length) * 4 + int_log2(length_length);
            
             //printf("copy command: %x\n", command);
@@ -472,9 +468,8 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
                 logger<<log4cpp::Priority::INFO<<("Can't write offset");
                 return false;
             }
-    
-            // В общем случае так делать нельзя, но у нас известно, что блоки по 1 миллиону байт
-            // и этот размер у нас всегда 4х байтовый
+   
+            // We should not use this approach in common case. But for 1MB block file it's working really perfect 
             if (!write_int_bigendian_wrapper(delta_file_handle, block_size)) {
                 logger<<log4cpp::Priority::INFO<<("Can't write copy len");
                 return false;
@@ -547,7 +542,7 @@ bool generate_delta(std::string signature_path, std::string file_path, std::stri
     return true;
 }
 
-// TODO: валидатор кривой, не сверяет размер толком, в случае если файл удлиннился ничего не сработает нормально
+// This validation code is broke. In case on file size increase we could not handle this case
 /*
 void validate_file(string file_path, string signature_path) {
     vector<signature_element> signatures_vector;
@@ -671,12 +666,12 @@ bool read_signature_file(std::string file_path, signature_file_t& signature_stru
     signature_struct.hash_type = 0x7777; /* md4 */
     signature_struct.hash_truncation = md4_truncation_from_file;
     signature_struct.block_size = blocksize_from_file;
- 
-    // TODO: пока не ясно как сделать поддержку динамического размера, но я не думаю, что она вообще кому-то нужна
+
+    // TODO: we could add dynamic size of cheksumm here. But I'm not sure about usefulnes of this 
     unsigned char md4_checksumm_buffer[8];
 
-    // Размер одной записи примерно
-    // Вычетаем размер хидера и делим на размер одной сигнатуры 
+    // Average size of single record
+    // Subtract header size and divie on size of single struct
     unsigned long long signatures_count = int ( (file_size - sizeof(uint32_t) * 3) / (sizeof(uint32_t) + md4_truncation_from_file));
 
     logger<<log4cpp::Priority::INFO<<"We calculated approximate signatures number as: "<<signatures_count;
@@ -696,7 +691,7 @@ bool read_signature_file(std::string file_path, signature_file_t& signature_stru
 	    break;
 	}
 
-	// Это нормальный код, он просто отключен!
+	// It's pretty well working code. It's just commented
 	/*
 	printf("weak: %08x offset: %lld ", weak_checksumm, offset);
 	printf("md4: ");
@@ -745,7 +740,7 @@ int write_int_bigendian(int file_handle, int32_t integer_value) {
 
     int bytes_written = write(file_handle, &encoded_integer, sizeof(int32_t));
 
-    // так как может случиться так, что мы записали меньше байт, чем пытались
+    // In some cases we could write less bytes than we tried to write
     if (bytes_written == sizeof(int32_t)) {
 	return true;
     } else {
@@ -770,7 +765,7 @@ int write_int_bigendian_wrapper(int file_handle, int32_t integer_value) {
 
     int bytes_written = write_wrapper(file_handle, &encoded_integer, sizeof(int32_t));
 
-    // так как может случиться так, что мы записали меньше байт, чем пытались
+    // In some cases we could write less bytes than we tried to write
     if (bytes_written == sizeof(int32_t)) {
         return true;
     } else {
@@ -801,7 +796,7 @@ void hexlify(const char* in, unsigned int size, char* out) {
             if (nib < 10) {
                 out[(i*2)+j] = nib + '0';
             } else {
-		// если добавить A, то получтся в верхнем регистре
+                // If we add 'A' we will get upper case
                 out[(i*2)+j] = nib - 10 + 'a';
             }
         }        
@@ -836,7 +831,7 @@ int strong_md4_checksumm(void const *p, int len, unsigned char* md4_digest, unsi
 	    return 0;
         }
     } else {
-       // В противном случае нам нужно положить данные в буфер и уже оттуда выдать тому, кто их требует 
+        // In other case we should put data to buffer and return they to calling code
         if (!MD4_Final(md4_16byte_buffer, &md4_context)) {
             return 0;
         }
