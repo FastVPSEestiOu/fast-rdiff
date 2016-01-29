@@ -44,3 +44,7 @@ Yes, it's very well tested. We are using it to generate and restore about 500TB 
 
 Michael Samuel (https://github.com/therealmik/pyrdiff)
 
+### License 
+
+GPLv2, author: pavel.odintsov@gmail.com
+
