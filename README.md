@@ -52,5 +52,5 @@ Michael Samuel (https://github.com/therealmik/pyrdiff)
 
 ### License 
 
-GPLv2, author: pavel.odintsov@gmail.com
+GPLv2, author: Pavel Odintsov, pavel.odintsov@gmail.com
 
