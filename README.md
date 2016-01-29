@@ -36,6 +36,10 @@ cmake ..
 make
 ```
 
+### Is it mature?
+
+Yes, it's very well tested. We are using it to generate and restore about 500TB of customer backups. We are using this code for last 2 year without any issues. Thanks to bundled checksumm support for all steps (for delta, for original file) we could be sure in data integrity.
+
 ### Thanks
 
 Michael Samuel (https://github.com/therealmik/pyrdiff)
