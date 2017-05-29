@@ -7,5 +7,5 @@ project(FastRdiff)
 find_package(OpenSSL REQUIRED)
 
 add_executable(fastrdiff fastrdiff.cpp)
-target_link_libraries(fastrdiff ssl)
+target_link_libraries(fastrdiff ssl crypto)
 target_link_libraries(fastrdiff log4cpp)
