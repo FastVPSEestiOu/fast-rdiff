@@ -24,7 +24,7 @@ We support only delta generation and ONLY for 1MB block files. All other file si
 
 ```bash
 # CentOS / RHEL
-yum install -y openssl-devel cmake gcc make log4cpp-devel
+yum install -y openssl-devel cmake gcc make log4cpp-devel gcc-c++
 
 
 cd /usr/src
